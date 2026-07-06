@@ -139,6 +139,7 @@ For the latest handover, verified data counts, local URLs, and auto-restart setu
 For a Vietnamese usage guide with AWS credit safeguards, see [docs/huong-dan-su-dung.md](/D:/UNIVERSITY/Cap2/docs/huong-dan-su-dung.md).
 For the current no-AWS free/near-free deployment route, see [docs/free-deployment.md](/D:/UNIVERSITY/Cap2/docs/free-deployment.md).
 For the current GitHub/Render/Vercel deployment status, see [docs/online-deploy-status.md](/D:/UNIVERSITY/Cap2/docs/online-deploy-status.md).
+For the final Vietnamese completion report, see [docs/bao-cao-hoan-thien.md](/D:/UNIVERSITY/Cap2/docs/bao-cao-hoan-thien.md).
 
 Live no-AWS static demo:
 

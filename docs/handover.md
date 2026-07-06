@@ -159,6 +159,7 @@ Production-ready next AWS steps:
 The current `web/Dockerfile` is production-oriented and runs `next start`.
 
 For Vietnamese operating instructions, see [huong-dan-su-dung.md](/D:/UNIVERSITY/Cap2/docs/huong-dan-su-dung.md).
+For the final Vietnamese completion report, see [bao-cao-hoan-thien.md](/D:/UNIVERSITY/Cap2/docs/bao-cao-hoan-thien.md).
 
 ## No-AWS free deployment route
 
