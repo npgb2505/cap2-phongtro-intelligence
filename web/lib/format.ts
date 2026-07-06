@@ -28,10 +28,10 @@ const DISTRICT_ALIASES: Record<string, string> = {
 };
 
 const PRECISION_LABELS: Record<string, string> = {
-  exact: "Toa do sat dia chi",
-  district: "Tam diem cap quan",
-  province: "Tam diem cap tinh",
-  none: "Chua dinh vi",
+  exact: "Tọa độ sát địa chỉ",
+  district: "Tâm điểm cấp quận",
+  province: "Tâm điểm cấp tỉnh",
+  none: "Chưa định vị",
 };
 
 function foldText(value: string) {
@@ -46,7 +46,7 @@ function foldText(value: string) {
 
 export function formatDistrict(value: string | null | undefined) {
   if (!value) {
-    return "Chua ro khu vuc";
+    return "Chưa rõ khu vực";
   }
   return DISTRICT_ALIASES[foldText(value)] ?? value;
 }

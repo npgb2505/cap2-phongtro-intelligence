@@ -15,6 +15,13 @@ type Props = {
 
 const DEFAULT_CENTER: [number, number] = [10.7769, 106.7009];
 
+const SOURCE_LABELS: Record<string, string> = {
+  phongtro123: "Phongtro123",
+  nhatot: "NhaTot",
+  mogi: "Mogi",
+  fallback: "Fallback"
+};
+
 function sourceColor(sourceName: string) {
   if (sourceName === "phongtro123") {
     return "#0f766e";
@@ -26,6 +33,24 @@ function sourceColor(sourceName: string) {
     return "#db2777";
   }
   return "#f59e0b";
+}
+
+function sourceLabel(sourceName: string) {
+  return SOURCE_LABELS[sourceName] ?? sourceName;
+}
+
+function formatCurrency(value: number | null) {
+  if (!value || value < 1000) {
+    return "Liên hệ";
+  }
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} triệu/tháng`;
+  }
+  return `${value.toLocaleString("vi-VN")} VND`;
+}
+
+function imageUrl(item: Listing) {
+  return item.primary_image_url || item.thumbnail_url;
 }
 
 function FitVisibleListings({ listings, selectedListing }: { listings: Listing[]; selectedListing: Listing | undefined }) {
@@ -91,15 +116,16 @@ export function ListingsMap({ listings, selectedListingId, onSelectListing }: Pr
             >
               <Popup>
                 <div className="popup">
+                  {imageUrl(item) ? <img className="popup-image" src={imageUrl(item) ?? ""} alt={item.title} /> : null}
                   <span className="popup-badge" style={{ color }}>
-                    {item.source_name}
+                    {sourceLabel(item.source_name)}
                   </span>
                   <strong>{item.title}</strong>
-                  <p>{item.full_address ?? "Dang cap nhat dia chi"}</p>
+                  <p>{item.full_address ?? "Đang cập nhật địa chỉ"}</p>
                   <p>{formatDistrict(item.district)} - {formatPrecision(item.geocode_precision)}</p>
-                  <p>{item.price_value ? `${item.price_value.toLocaleString("vi-VN")} VND` : "Gia dang cap nhat"}</p>
+                  <p>{formatCurrency(item.price_value)}</p>
                   <a href={item.canonical_url} target="_blank" rel="noreferrer">
-                    Mo tin goc
+                    Mở tin gốc
                   </a>
                 </div>
               </Popup>
