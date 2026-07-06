@@ -1,6 +1,6 @@
 # Bao cao hoan thien du an Cap2
 
-Ngay cap nhat: 2026-07-06
+Ngay cap nhat: 2026-07-07
 
 ## 1. Thong tin demo
 
@@ -30,6 +30,7 @@ Du an da hoan thien theo huong:
 - Dat yeu cau it nhat 3 nguon, moi nguon co tu 1,000 tin tro len.
 - Co backend FastAPI chay local voi PostgreSQL/CSV fallback.
 - Co frontend Next.js hien thi ban do va danh sach tin.
+- Giao dien da duoc thiet ke lai theo huong map-first workspace, co filter nguon va marker mau theo nguon phong tro.
 - Co local watchdog tu khoi dong lai backend/web khi dung.
 - Co pipeline lam moi du lieu hang ngay o local.
 - Co self-audit de tu review tinh trang he thong.
@@ -281,4 +282,3 @@ Du an da co ban local day du va ban online mien phi:
 - Online: GitHub Pages chay that, co 3,000 tin tu 3 nguon lon.
 - Tai lieu van hanh va deploy da duoc cap nhat.
 - Khong phat sinh chi phi AWS.
-

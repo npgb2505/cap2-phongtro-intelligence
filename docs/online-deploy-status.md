@@ -1,6 +1,6 @@
 # Online Deploy Status
 
-Updated: 2026-07-06
+Updated: 2026-07-07
 
 ## Repository
 
@@ -49,6 +49,7 @@ GitHub Pages fallback:
 - A static frontend deploy path has been added so the project can go online without Render/Vercel login.
 - Static JSON data lives at `web/public/data/listings-map.json`.
 - GitHub Actions workflow lives at `.github/workflows/pages.yml`.
+- Frontend is now redesigned as a map-first rental workspace: source filters, source-colored markers, listing sidebar, and visible marker count.
 - Live Pages URL:
 
 ```text

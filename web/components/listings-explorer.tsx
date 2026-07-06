@@ -1,10 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { startTransition, useDeferredValue, useState } from "react";
+import { startTransition, useDeferredValue, useMemo, useState } from "react";
 
 import { formatDistrict, formatPrecision } from "../lib/format";
-import { ListingMapResponse } from "../lib/types";
+import { Listing, ListingMapResponse } from "../lib/types";
 
 const ListingsMap = dynamic(() => import("./listings-map").then((module) => module.ListingsMap), {
   ssr: false
@@ -14,120 +14,196 @@ type Props = {
   initialData: ListingMapResponse;
 };
 
+const SOURCE_LABELS: Record<string, string> = {
+  phongtro123: "Phongtro123",
+  nhatot: "NhaTot",
+  mogi: "Mogi",
+  fallback: "Fallback"
+};
+
 function formatCurrency(value: number | null) {
   if (!value) {
     return "Lien he";
   }
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} tr/thang`;
+  }
   return `${value.toLocaleString("vi-VN")} VND`;
+}
+
+function sourceLabel(sourceName: string) {
+  return SOURCE_LABELS[sourceName] ?? sourceName;
+}
+
+function sourceCounts(items: Listing[]) {
+  return items.reduce<Record<string, number>>((acc, item) => {
+    acc[item.source_name] = (acc[item.source_name] ?? 0) + 1;
+    return acc;
+  }, {});
 }
 
 export function ListingsExplorer({ initialData }: Props) {
   const [selectedProvince, setSelectedProvince] = useState<string>("all");
+  const [selectedSource, setSelectedSource] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
   const [selectedListingId, setSelectedListingId] = useState<string | null>(initialData.items[0]?.id ?? null);
   const deferredSearch = useDeferredValue(searchText);
 
+  const counts = useMemo(() => sourceCounts(initialData.items), [initialData.items]);
+  const sources = useMemo(() => Object.keys(counts).sort(), [counts]);
+  const locatedCount = useMemo(
+    () => initialData.items.filter((item) => item.latitude && item.longitude).length,
+    [initialData.items]
+  );
+
   const keyword = deferredSearch.trim().toLowerCase();
   const visibleItems = initialData.items.filter((item) => {
     const matchesProvince = selectedProvince === "all" || item.province === selectedProvince;
-    const haystack = `${item.title} ${item.full_address ?? ""} ${item.district ?? ""} ${item.room_type ?? ""}`.toLowerCase();
+    const matchesSource = selectedSource === "all" || item.source_name === selectedSource;
+    const haystack = `${item.title} ${item.full_address ?? ""} ${item.district ?? ""} ${item.room_type ?? ""} ${item.source_name}`.toLowerCase();
     const matchesKeyword = !keyword || haystack.includes(keyword);
-    return matchesProvince && matchesKeyword;
+    return matchesProvince && matchesSource && matchesKeyword;
   });
 
   const exactCount = initialData.geocode_summary.exact ?? 0;
   const districtCount = initialData.geocode_summary.district ?? 0;
   const provinceCount = initialData.geocode_summary.province ?? 0;
   const selectedListing = visibleItems.find((item) => item.id === selectedListingId) ?? visibleItems[0] ?? null;
+  const markerCount = visibleItems.filter((item) => item.latitude && item.longitude).length;
 
   return (
-    <main className="shell">
-      <section className="hero">
-        <div className="hero-copy">
-          <span className="eyebrow">Curated nationwide rental intelligence</span>
-          <h1>Map-first explorer with cleaned ETL, reference geocoding, and better field quality than the source feed.</h1>
-          <p>
-            Datasets are transformed from the local nationwide crawl, then each listing is placed on a reference map
-            using exact address geocoding when available and ward or district fallback when not.
-          </p>
-          <div className="hero-actions">
-            <input
-              className="search-input"
-              type="search"
-              placeholder="Tim theo tieu de, duong, quan, room type..."
-              value={searchText}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                startTransition(() => setSearchText(nextValue));
-              }}
-            />
-            <select
-              className="province-select"
-              value={selectedProvince}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                startTransition(() => setSelectedProvince(nextValue));
-              }}
-            >
-              <option value="all">Tat ca tinh thanh</option>
-              {initialData.available_provinces.map((province) => (
-                <option key={province} value={province}>
-                  {province}
-                </option>
-              ))}
-            </select>
+    <main className="app-shell">
+      <header className="topbar">
+        <div className="brand-block">
+          <span className="status-dot" aria-hidden />
+          <div>
+            <p>PhongTro Intelligence</p>
+            <h1>Rental map workspace</h1>
           </div>
         </div>
-
-        <div className="hero-card">
-          <div className="stat-grid">
-            <article className="stat-tile">
-              <span>Total crawled</span>
-              <strong>{initialData.total.toLocaleString("vi-VN")}</strong>
-            </article>
-            <article className="stat-tile">
-              <span>Loaded in demo</span>
-              <strong>{initialData.returned.toLocaleString("vi-VN")}</strong>
-            </article>
-            <article className="stat-tile">
-              <span>Exact geocoded</span>
-              <strong>{exactCount.toLocaleString("vi-VN")}</strong>
-            </article>
-            <article className="stat-tile">
-              <span>Reference centroid</span>
-              <strong>{(districtCount + provinceCount).toLocaleString("vi-VN")}</strong>
-            </article>
+        <div className="topbar-metrics" aria-label="Dataset summary">
+          <div>
+            <span>Dataset</span>
+            <strong>{initialData.total.toLocaleString("vi-VN")}</strong>
           </div>
-          <div className="legend">
-            <span className="legend-item exact">Exact</span>
-            <span className="legend-item district">District reference</span>
-            <span className="legend-item province">Province reference</span>
+          <div>
+            <span>Dang hien</span>
+            <strong>{visibleItems.length.toLocaleString("vi-VN")}</strong>
+          </div>
+          <div>
+            <span>Marker</span>
+            <strong>{markerCount.toLocaleString("vi-VN")}</strong>
+          </div>
+        </div>
+      </header>
+
+      <section className="control-strip" aria-label="Filters and quality indicators">
+        <label className="search-field">
+          <span>Tim kiem</span>
+          <input
+            type="search"
+            placeholder="Nhap ten duong, quan, tieu de..."
+            value={searchText}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              startTransition(() => setSearchText(nextValue));
+            }}
+          />
+        </label>
+
+        <label className="select-field">
+          <span>Tinh thanh</span>
+          <select
+            value={selectedProvince}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              startTransition(() => setSelectedProvince(nextValue));
+            }}
+          >
+            <option value="all">Tat ca</option>
+            {initialData.available_provinces.map((province) => (
+              <option key={province} value={province}>
+                {province}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="select-field">
+          <span>Nguon</span>
+          <select
+            value={selectedSource}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              startTransition(() => setSelectedSource(nextValue));
+            }}
+          >
+            <option value="all">Tat ca nguon</option>
+            {sources.map((source) => (
+              <option key={source} value={source}>
+                {sourceLabel(source)} ({counts[source].toLocaleString("vi-VN")})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="quality-row">
+          <div>
+            <span>Toa do</span>
+            <strong>{locatedCount.toLocaleString("vi-VN")}</strong>
+          </div>
+          <div>
+            <span>Exact</span>
+            <strong>{exactCount.toLocaleString("vi-VN")}</strong>
+          </div>
+          <div>
+            <span>Reference</span>
+            <strong>{(districtCount + provinceCount).toLocaleString("vi-VN")}</strong>
           </div>
         </div>
       </section>
 
-      <section className="workspace">
-        <aside className="sidebar">
-          <div className="sidebar-header">
-            <h2>Curated Listings</h2>
-            <span>{visibleItems.length} ket qua dang hien</span>
+      <section className="workspace-grid">
+        <aside className="results-panel" aria-label="Listings">
+          <div className="panel-head">
+            <div>
+              <p>Ket qua</p>
+              <h2>{visibleItems.length.toLocaleString("vi-VN")} phong tro</h2>
+            </div>
+            <span>{markerCount.toLocaleString("vi-VN")} diem tren ban do</span>
           </div>
+
+          <div className="source-pills" aria-label="Source distribution">
+            {sources.map((source) => (
+              <button
+                key={source}
+                type="button"
+                className={`source-pill source-${source} ${selectedSource === source ? "active" : ""}`}
+                onClick={() => setSelectedSource(selectedSource === source ? "all" : source)}
+              >
+                <span />
+                {sourceLabel(source)}
+                <strong>{counts[source].toLocaleString("vi-VN")}</strong>
+              </button>
+            ))}
+          </div>
+
           <div className="listing-list">
             {visibleItems.map((item) => (
               <article
                 key={item.id}
-                className={`listing-card ${item.id === selectedListing?.id ? "selected" : ""}`}
+                className={`listing-card source-border-${item.source_name} ${item.id === selectedListing?.id ? "selected" : ""}`}
                 onClick={() => setSelectedListingId(item.id)}
               >
-                <div className="listing-meta">
+                <div className="listing-card-top">
+                  <span className={`source-chip source-${item.source_name}`}>{sourceLabel(item.source_name)}</span>
                   <span>{formatDistrict(item.district)}</span>
-                  <span>{item.area_m2 ? `${item.area_m2} m2` : "No area"}</span>
                 </div>
                 <h3>{item.title}</h3>
                 <p>{item.full_address ?? "Address pending normalization"}</p>
                 <div className="listing-tags">
+                  <span>{item.area_m2 ? `${item.area_m2} m2` : "No area"}</span>
                   <span>{item.room_type ?? "khac"}</span>
-                  <span>{item.furnishing_level ?? "unknown"}</span>
                   <span>{formatPrecision(item.geocode_precision)}</span>
                 </div>
                 <div className="listing-footer">
@@ -139,40 +215,34 @@ export function ListingsExplorer({ initialData }: Props) {
           </div>
         </aside>
 
-        <section className="map-panel">
-          <div className="map-detail">
+        <section className="map-workspace">
+          <div className="map-toolbar">
             <div>
-              <span className="detail-kicker">Selected listing</span>
-              <h2>{selectedListing?.title ?? "Chon mot listing"}</h2>
-              <p>{selectedListing?.full_address ?? "Map dang hien thi cac toa do tham khao tu curated ETL."}</p>
+              <p>Dang chon</p>
+              <h2>{selectedListing?.title ?? "Chon mot phong tro tren ban do"}</h2>
             </div>
-            {selectedListing ? (
-              <div className="detail-grid">
-                <div>
-                  <span>Gia</span>
-                  <strong>{formatCurrency(selectedListing.price_value)}</strong>
-                </div>
-                <div>
-                  <span>Dinh vi</span>
-                  <strong>{formatPrecision(selectedListing.geocode_precision)}</strong>
-                </div>
-                <div>
-                  <span>Noi that</span>
-                  <strong>{selectedListing.furnishing_level ?? "unknown"}</strong>
-                </div>
-                <div>
-                  <span>Tien ich</span>
-                  <strong>{selectedListing.amenity_count}</strong>
-                </div>
-              </div>
-            ) : null}
+            <div className="toolbar-facts">
+              <span>{selectedListing ? formatCurrency(selectedListing.price_value) : "Gia dang cap nhat"}</span>
+              <span>{selectedListing ? formatPrecision(selectedListing.geocode_precision) : "Dinh vi"}</span>
+              <span>{selectedListing?.amenity_count ?? 0} tien ich</span>
+            </div>
           </div>
 
-          <ListingsMap
-            listings={visibleItems}
-            selectedListingId={selectedListing?.id ?? null}
-            onSelectListing={setSelectedListingId}
-          />
+          <div className="map-stage">
+            <ListingsMap
+              listings={visibleItems}
+              selectedListingId={selectedListing?.id ?? null}
+              onSelectListing={setSelectedListingId}
+            />
+            <div className="map-legend" aria-label="Map legend">
+              {sources.map((source) => (
+                <span key={source} className={`source-${source}`}>
+                  <i />
+                  {sourceLabel(source)}
+                </span>
+              ))}
+            </div>
+          </div>
         </section>
       </section>
     </main>
