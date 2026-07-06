@@ -138,6 +138,7 @@ For the cloud deployment readiness check and rollout flow, see [docs/cloud-deplo
 For the latest handover, verified data counts, local URLs, and auto-restart setup, see [docs/handover.md](/D:/UNIVERSITY/Cap2/docs/handover.md).
 For a Vietnamese usage guide with AWS credit safeguards, see [docs/huong-dan-su-dung.md](/D:/UNIVERSITY/Cap2/docs/huong-dan-su-dung.md).
 For the current no-AWS free/near-free deployment route, see [docs/free-deployment.md](/D:/UNIVERSITY/Cap2/docs/free-deployment.md).
+For the current GitHub/Render/Vercel deployment status, see [docs/online-deploy-status.md](/D:/UNIVERSITY/Cap2/docs/online-deploy-status.md).
 
 ### 4. Frontend
 
