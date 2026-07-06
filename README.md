@@ -140,6 +140,12 @@ For a Vietnamese usage guide with AWS credit safeguards, see [docs/huong-dan-su-
 For the current no-AWS free/near-free deployment route, see [docs/free-deployment.md](/D:/UNIVERSITY/Cap2/docs/free-deployment.md).
 For the current GitHub/Render/Vercel deployment status, see [docs/online-deploy-status.md](/D:/UNIVERSITY/Cap2/docs/online-deploy-status.md).
 
+Live no-AWS static demo:
+
+```text
+https://npgb2505.github.io/cap2-phongtro-intelligence/
+```
+
 ### 4. Frontend
 
 ```bash

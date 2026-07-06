@@ -181,3 +181,15 @@ Files added for this path:
 The backend runs with `PT_DATABASE_ENABLED=false` and reads `/app/data/listings_curated.csv`, which is copied from `crawler/artifacts/deploy/listings_deploy.csv` at Docker build time. The deploy snapshot has 3,000 rows: 1,000 each from `phongtro123`, `nhatot`, and `mogi`. This avoids Render Postgres and its 30-day Free database expiration while keeping the deploy artifact small enough for GitHub/Render.
 
 The deploy-ready code has been pushed to private GitHub repo `https://github.com/npgb2505/cap2-phongtro-intelligence`. Render deployment is waiting for dashboard login/OAuth. See [online-deploy-status.md](/D:/UNIVERSITY/Cap2/docs/online-deploy-status.md).
+
+GitHub Pages static deployment is live and verified:
+
+```text
+https://npgb2505.github.io/cap2-phongtro-intelligence/
+```
+
+The public static JSON endpoint returns 3,000 listings with 1,000 each from `phongtro123`, `nhatot`, and `mogi`:
+
+```text
+https://npgb2505.github.io/cap2-phongtro-intelligence/data/listings-map.json
+```

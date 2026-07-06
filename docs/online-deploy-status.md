@@ -36,6 +36,7 @@ Completed:
 - Local cloud-mode backend test passed with `PT_DATABASE_ENABLED=false`.
 - Web production build passed.
 - Local self-audit passed.
+- GitHub Pages static deployment is live and verified.
 
 Waiting:
 
@@ -48,10 +49,21 @@ GitHub Pages fallback:
 - A static frontend deploy path has been added so the project can go online without Render/Vercel login.
 - Static JSON data lives at `web/public/data/listings-map.json`.
 - GitHub Actions workflow lives at `.github/workflows/pages.yml`.
-- Expected Pages URL after enabling Pages from GitHub Actions:
+- Live Pages URL:
 
 ```text
 https://npgb2505.github.io/cap2-phongtro-intelligence/
+```
+
+Verified:
+
+```text
+HTML status: 200
+JSON total: 3000
+JSON returned: 3000
+phongtro123: 1000
+nhatot: 1000
+mogi: 1000
 ```
 
 ## GitHub Pages static deploy
@@ -65,7 +77,7 @@ NEXT_PUBLIC_STATIC_DATA_PATH=/cap2-phongtro-intelligence/data/listings-map.json
 
 It builds `web/out` using `npm run build:pages` and deploys it through GitHub Actions.
 
-To enable it:
+It has already been enabled through the GitHub Pages API with `build_type=workflow`. If it ever needs to be reconfigured manually:
 
 1. Open repo settings:
 
