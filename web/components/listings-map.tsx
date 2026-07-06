@@ -24,15 +24,15 @@ const SOURCE_LABELS: Record<string, string> = {
 
 function sourceColor(sourceName: string) {
   if (sourceName === "phongtro123") {
-    return "#0f766e";
-  }
-  if (sourceName === "nhatot") {
     return "#2563eb";
   }
-  if (sourceName === "mogi") {
-    return "#db2777";
+  if (sourceName === "nhatot") {
+    return "#0891b2";
   }
-  return "#f59e0b";
+  if (sourceName === "mogi") {
+    return "#4f46e5";
+  }
+  return "#0ea5e9";
 }
 
 function sourceLabel(sourceName: string) {
@@ -51,6 +51,10 @@ function formatCurrency(value: number | null) {
 
 function imageUrl(item: Listing) {
   return item.primary_image_url || item.thumbnail_url;
+}
+
+function cleanDisplayText(value: string | null | undefined) {
+  return (value ?? "").replace(/[\u2014\u2013]/g, "-");
 }
 
 function FitVisibleListings({ listings, selectedListing }: { listings: Listing[]; selectedListing: Listing | undefined }) {
@@ -116,12 +120,12 @@ export function ListingsMap({ listings, selectedListingId, onSelectListing }: Pr
             >
               <Popup>
                 <div className="popup">
-                  {imageUrl(item) ? <img className="popup-image" src={imageUrl(item) ?? ""} alt={item.title} /> : null}
+                  {imageUrl(item) ? <img className="popup-image" src={imageUrl(item) ?? ""} alt={cleanDisplayText(item.title)} /> : null}
                   <span className="popup-badge" style={{ color }}>
                     {sourceLabel(item.source_name)}
                   </span>
-                  <strong>{item.title}</strong>
-                  <p>{item.full_address ?? "Đang cập nhật địa chỉ"}</p>
+                  <strong>{cleanDisplayText(item.title)}</strong>
+                  <p>{cleanDisplayText(item.full_address) || "Đang cập nhật địa chỉ"}</p>
                   <p>{formatDistrict(item.district)} - {formatPrecision(item.geocode_precision)}</p>
                   <p>{formatCurrency(item.price_value)}</p>
                   <a href={item.canonical_url} target="_blank" rel="noreferrer">
