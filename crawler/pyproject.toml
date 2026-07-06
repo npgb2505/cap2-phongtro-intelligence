@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phongtro-crawler"
+version = "0.1.0"
+description = "Crawler jobs for the PhongTro Intelligence Platform"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27.0",
+  "beautifulsoup4>=4.12.3",
+  "lxml>=5.2.2",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "tenacity>=8.4.2",
+  "boto3>=1.34.0",
+  "psycopg[binary]>=3.2.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

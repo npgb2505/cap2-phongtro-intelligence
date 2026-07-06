@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cap2-phongtro-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile.render
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PT_APP_ENV
+        value: production
+      - key: PT_APP_DEBUG
+        value: "false"
+      - key: PT_DATABASE_ENABLED
+        value: "false"
+      - key: PT_LISTING_DATASET_PATH
+        value: /app/data/listings_curated.csv
+      - key: PT_LISTING_MAP_DEFAULT_LIMIT
+        value: "900"
+      - key: PT_CORS_ORIGINS
+        value: "*"

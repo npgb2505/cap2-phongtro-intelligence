@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.next/
+node_modules/
+dist/
+build/
+.env
+.env.*
+*.pyc
+*.pyo
+*.sqlite3
+coverage/
+/artifacts/
+tmp/
+*.log
+.terraform/
+terraform.tfstate*
+*.tfvars
+*.egg-info/
+
+# Keep raw crawler artifacts out of Git, but allow the curated CSV used by
+# the no-AWS Render demo image.
+crawler/artifacts/**
+!crawler/artifacts/deploy/
+!crawler/artifacts/deploy/listings_deploy.csv
+!crawler/artifacts/deploy/deploy_snapshot_summary.json

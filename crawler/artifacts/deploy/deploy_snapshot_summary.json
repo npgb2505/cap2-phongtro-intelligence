@@ -1,0 +1,11 @@
+{
+  "source_csv": "D:\\UNIVERSITY\\Cap2\\crawler\\artifacts\\curated\\toan-quoc\\listings_curated.csv",
+  "output_csv": "D:\\UNIVERSITY\\Cap2\\crawler\\artifacts\\deploy\\listings_deploy.csv",
+  "total_rows": 3000,
+  "per_source_target": 1000,
+  "source_counts": {
+    "phongtro123": 1000,
+    "nhatot": 1000,
+    "mogi": 1000
+  }
+}
