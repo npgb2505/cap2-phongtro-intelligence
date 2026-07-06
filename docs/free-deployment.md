@@ -17,6 +17,15 @@ Vercel Hobby
   -> calls Render backend through NEXT_PUBLIC_API_URL
 ```
 
+No-login fallback:
+
+```text
+GitHub Pages
+  -> static-exported Next.js frontend
+  -> reads web/public/data/listings-map.json
+  -> no backend required
+```
+
 Why this route:
 
 - no AWS resource is created

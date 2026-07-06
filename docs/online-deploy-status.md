@@ -43,6 +43,50 @@ Waiting:
 - Render GitHub connection must allow repo `cap2-phongtro-intelligence`.
 - After backend deploy, Vercel frontend import must be configured with the Render API URL.
 
+GitHub Pages fallback:
+
+- A static frontend deploy path has been added so the project can go online without Render/Vercel login.
+- Static JSON data lives at `web/public/data/listings-map.json`.
+- GitHub Actions workflow lives at `.github/workflows/pages.yml`.
+- Expected Pages URL after enabling Pages from GitHub Actions:
+
+```text
+https://npgb2505.github.io/cap2-phongtro-intelligence/
+```
+
+## GitHub Pages static deploy
+
+The static deploy uses:
+
+```text
+GITHUB_PAGES=true
+NEXT_PUBLIC_STATIC_DATA_PATH=/cap2-phongtro-intelligence/data/listings-map.json
+```
+
+It builds `web/out` using `npm run build:pages` and deploys it through GitHub Actions.
+
+To enable it:
+
+1. Open repo settings:
+
+```text
+https://github.com/npgb2505/cap2-phongtro-intelligence/settings/pages
+```
+
+2. Set Source to:
+
+```text
+GitHub Actions
+```
+
+3. Trigger the workflow:
+
+```text
+https://github.com/npgb2505/cap2-phongtro-intelligence/actions/workflows/pages.yml
+```
+
+Click `Run workflow` on branch `main`.
+
 ## Render backend dashboard steps
 
 1. Open Render:
@@ -118,4 +162,3 @@ NEXT_PUBLIC_API_URL=https://<render-service>.onrender.com/api/v1
 ```text
 PT_CORS_ORIGINS=https://<your-vercel-app>.vercel.app
 ```
-

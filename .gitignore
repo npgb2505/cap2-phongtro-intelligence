@@ -26,3 +26,5 @@ crawler/artifacts/**
 !crawler/artifacts/deploy/
 !crawler/artifacts/deploy/listings_deploy.csv
 !crawler/artifacts/deploy/deploy_snapshot_summary.json
+
+web/out/

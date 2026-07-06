@@ -1,9 +1,25 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import { ListingsExplorer } from "../components/listings-explorer";
-import { fetchMapListings } from "../lib/api";
+import { fallbackMapListings, fetchMapListings } from "../lib/api";
+import { ListingMapResponse } from "../lib/types";
 
-export const dynamic = "force-dynamic";
+export default function HomePage() {
+  const [data, setData] = useState<ListingMapResponse>(fallbackMapListings);
 
-export default async function HomePage() {
-  const data = await fetchMapListings();
+  useEffect(() => {
+    let cancelled = false;
+    fetchMapListings().then((nextData) => {
+      if (!cancelled) {
+        setData(nextData);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return <ListingsExplorer initialData={data} />;
 }
