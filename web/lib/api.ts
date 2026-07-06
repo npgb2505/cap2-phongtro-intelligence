@@ -70,15 +70,46 @@ function dataUrl() {
   return STATIC_DATA_PATH || `${API_URL}/listings/map?limit=900`;
 }
 
+function resolveChunkUrl(manifestUrl: string, chunkPath: string) {
+  if (/^https?:\/\//.test(chunkPath) || chunkPath.startsWith("/")) {
+    return chunkPath;
+  }
+  const baseUrl = /^https?:\/\//.test(manifestUrl)
+    ? manifestUrl
+    : new URL(manifestUrl, window.location.origin).toString();
+  return new URL(chunkPath, baseUrl).toString();
+}
+
 export async function fetchMapListings(): Promise<ListingMapResponse> {
   try {
-    const response = await fetch(dataUrl(), {
+    const manifestUrl = dataUrl();
+    const response = await fetch(manifestUrl, {
       cache: "no-store"
     });
     if (!response.ok) {
       throw new Error("Failed to load listings");
     }
-    return (await response.json()) as ListingMapResponse;
+    const payload = (await response.json()) as ListingMapResponse;
+    if (!payload.chunks?.length) {
+      return payload;
+    }
+
+    const chunkResponses = await Promise.all(
+      payload.chunks.map(async (chunkPath) => {
+        const chunkResponse = await fetch(resolveChunkUrl(manifestUrl, chunkPath), { cache: "no-store" });
+        if (!chunkResponse.ok) {
+          throw new Error(`Failed to load chunk ${chunkPath}`);
+        }
+        return (await chunkResponse.json()) as Pick<ListingMapResponse, "items">;
+      })
+    );
+
+    const items = chunkResponses.flatMap((chunk) => chunk.items ?? []);
+    return {
+      ...payload,
+      returned: items.length,
+      items
+    };
   } catch {
     return fallbackMapListings;
   }

@@ -22,6 +22,9 @@ type ChartItem = {
   detail?: string;
 };
 
+const RESULT_BATCH_SIZE = 500;
+const MAP_MARKER_LIMIT = 6000;
+
 const SOURCE_LABELS: Record<string, string> = {
   phongtro123: "Phongtro123",
   nhatot: "NhaTot",
@@ -68,6 +71,20 @@ const AREA_BUCKETS = [
   { label: "Trên 50 m2", min: 50, max: Number.POSITIVE_INFINITY }
 ];
 
+const AMENITY_FLAGS: Array<{ key: keyof Listing; label: string }> = [
+  { key: "has_aircon", label: "Máy lạnh" },
+  { key: "has_private_wc", label: "WC riêng" },
+  { key: "has_loft", label: "Gác lửng" },
+  { key: "has_parking", label: "Giữ xe" },
+  { key: "has_security", label: "An ninh" },
+  { key: "has_fingerprint_lock", label: "Khóa vân tay" },
+  { key: "allows_free_hours", label: "Giờ giấc tự do" },
+  { key: "has_balcony", label: "Ban công" },
+  { key: "has_kitchen", label: "Bếp" },
+  { key: "has_fridge", label: "Tủ lạnh" },
+  { key: "has_washer", label: "Máy giặt" }
+];
+
 function cleanDisplayText(value: string | null | undefined) {
   return (value ?? "").replace(/[\u2014\u2013]/g, "-");
 }
@@ -101,6 +118,19 @@ function formatArea(value: number | null) {
 
 function formatPercent(value: number) {
   return `${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
+}
+
+function formatNullable(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "Chưa có";
+  }
+  if (typeof value === "boolean") {
+    return value ? "Có" : "Không";
+  }
+  if (typeof value === "number") {
+    return value.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+  }
+  return cleanDisplayText(value);
 }
 
 function sourceLabel(sourceName: string) {
@@ -197,6 +227,50 @@ function ChartList({ items, total }: { items: ChartItem[]; total: number }) {
   );
 }
 
+function DonutChart({ items, total }: { items: ChartItem[]; total: number }) {
+  const colors = ["#2563eb", "#0891b2", "#4f46e5", "#0ea5e9", "#60a5fa", "#93c5fd"];
+  let cursor = 0;
+  const gradientParts = items.map((item, index) => {
+    const start = total ? (cursor / total) * 100 : 0;
+    cursor += item.value;
+    const end = total ? (cursor / total) * 100 : 0;
+    return `${colors[index % colors.length]} ${start}% ${end}%`;
+  });
+  const background = `conic-gradient(${gradientParts.join(", ") || "#dbeafe 0% 100%"})`;
+
+  return (
+    <div className="donut-wrap">
+      <div className="donut-chart" style={{ background }}>
+        <span>{total.toLocaleString("vi-VN")}</span>
+      </div>
+      <div className="donut-legend">
+        {items.map((item, index) => (
+          <span key={item.label}>
+            <i style={{ background: colors[index % colors.length] }} />
+            {item.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DetailGrid({ title, rows }: { title: string; rows: Array<[string, string | number | boolean | null | undefined]> }) {
+  return (
+    <section className="detail-section">
+      <h3>{title}</h3>
+      <div className="detail-grid">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>{formatNullable(value)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function ListingsExplorer({ initialData }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>("search");
   const [selectedProvince, setSelectedProvince] = useState<string>("all");
@@ -211,6 +285,7 @@ export function ListingsExplorer({ initialData }: Props) {
   const [maxArea, setMaxArea] = useState("");
   const [sortBy, setSortBy] = useState<(typeof SORT_OPTIONS)[number]["value"]>("recommended");
   const [searchText, setSearchText] = useState("");
+  const [resultLimit, setResultLimit] = useState(RESULT_BATCH_SIZE);
   const [selectedListingId, setSelectedListingId] = useState<string | null>(initialData.items[0]?.id ?? null);
   const deferredSearch = useDeferredValue(searchText);
 
@@ -281,6 +356,8 @@ export function ListingsExplorer({ initialData }: Props) {
 
   const selectedListing = visibleItems.find((item) => item.id === selectedListingId) ?? visibleItems[0] ?? null;
   const selectedImage = imageUrl(selectedListing);
+  const displayedItems = visibleItems.slice(0, resultLimit);
+  const mapItems = visibleItems.filter((item) => item.latitude && item.longitude).slice(0, MAP_MARKER_LIMIT);
   const markerCount = visibleItems.filter((item) => item.latitude && item.longitude).length;
   const imageCount = visibleItems.filter((item) => imageUrl(item)).length;
   const exactCount = visibleItems.filter((item) => item.geocode_precision === "exact").length;
@@ -308,6 +385,12 @@ export function ListingsExplorer({ initialData }: Props) {
     { label: "Chưa định vị", value: visibleItems.filter((item) => !item.latitude || !item.longitude).length }
   ];
   const topDistrict = districtChart[0]?.label ?? "Chưa có";
+  const amenityChart = AMENITY_FLAGS.map((flag) => ({
+    label: flag.label,
+    value: visibleItems.filter((item) => Boolean(item[flag.key])).length
+  })).sort((a, b) => b.value - a.value);
+  const imageCoverage = visibleItems.length ? (imageCount / visibleItems.length) * 100 : 0;
+  const markerCoverage = visibleItems.length ? (markerCount / visibleItems.length) * 100 : 0;
   const hasActiveFilters =
     selectedProvince !== "all" ||
     selectedDistrict !== "all" ||
@@ -334,6 +417,7 @@ export function ListingsExplorer({ initialData }: Props) {
     setMaxArea("");
     setSearchText("");
     setSortBy("recommended");
+    setResultLimit(RESULT_BATCH_SIZE);
   }
 
   return (
@@ -526,7 +610,7 @@ export function ListingsExplorer({ initialData }: Props) {
             </div>
 
             <div className="listing-list">
-              {visibleItems.map((item) => (
+              {displayedItems.map((item) => (
                 <article
                   key={item.id}
                   className={`listing-card source-border-${item.source_name} ${item.id === selectedListing?.id ? "selected" : ""}`}
@@ -560,6 +644,15 @@ export function ListingsExplorer({ initialData }: Props) {
                   <p>Thử nới khoảng giá, diện tích hoặc đổi khu vực để xem thêm phòng.</p>
                 </div>
               ) : null}
+              {visibleItems.length > displayedItems.length ? (
+                <button
+                  className="load-more-button"
+                  type="button"
+                  onClick={() => setResultLimit((current) => current + RESULT_BATCH_SIZE)}
+                >
+                  Tải thêm {Math.min(RESULT_BATCH_SIZE, visibleItems.length - displayedItems.length).toLocaleString("vi-VN")} tin
+                </button>
+              ) : null}
             </div>
           </aside>
 
@@ -570,14 +663,14 @@ export function ListingsExplorer({ initialData }: Props) {
                 <h2>{selectedListing ? formatDistrict(selectedListing.district) : "Chọn một tin để xem chi tiết"}</h2>
               </div>
               <div className="toolbar-facts">
-                <span>{markerCount.toLocaleString("vi-VN")} tin có tọa độ</span>
+                <span>Đang vẽ {mapItems.length.toLocaleString("vi-VN")} / {markerCount.toLocaleString("vi-VN")} marker</span>
                 <span>{exactCount.toLocaleString("vi-VN")} tọa độ sát địa chỉ</span>
                 <span>{referenceCount.toLocaleString("vi-VN")} tọa độ tham chiếu</span>
               </div>
             </div>
 
             <div className="map-stage">
-              <ListingsMap listings={visibleItems} selectedListingId={selectedListing?.id ?? null} onSelectListing={setSelectedListingId} />
+              <ListingsMap listings={mapItems} selectedListingId={selectedListing?.id ?? null} onSelectListing={setSelectedListingId} />
               <div className="map-legend" aria-label="Chú giải bản đồ">
                 {sources.map((source) => (
                   <span key={source} className={`source-${source}`}>
@@ -640,6 +733,67 @@ export function ListingsExplorer({ initialData }: Props) {
                     <span>{selectedListing.record_completeness_score ?? 0}/100 độ đầy đủ</span>
                   </div>
 
+                  <DetailGrid
+                    title="Thông tin giá và diện tích"
+                    rows={[
+                      ["Giá gốc", selectedListing.price_text],
+                      ["Giá chuẩn hóa", formatCurrency(selectedListing.price_value)],
+                      ["Giá mỗi m2", selectedListing.price_per_m2 ? `${selectedListing.price_per_m2.toLocaleString("vi-VN")} VND/m2` : null],
+                      ["Diện tích gốc", selectedListing.area_text],
+                      ["Diện tích chuẩn hóa", formatArea(selectedListing.area_m2)],
+                      ["Trạng thái", selectedListing.status]
+                    ]}
+                  />
+
+                  <DetailGrid
+                    title="Địa chỉ và tọa độ"
+                    rows={[
+                      ["Tỉnh thành", selectedListing.province],
+                      ["Quận huyện", formatDistrict(selectedListing.district)],
+                      ["Phường xã", selectedListing.ward],
+                      ["Đường", selectedListing.street_address],
+                      ["Địa chỉ map", selectedListing.map_reference_address],
+                      ["Latitude", selectedListing.latitude],
+                      ["Longitude", selectedListing.longitude],
+                      ["Nguồn geocode", selectedListing.geocode_source],
+                      ["Tên geocode", selectedListing.geocode_display_name],
+                      ["Điểm địa chỉ", selectedListing.address_quality_score],
+                      ["Tọa độ tham chiếu", selectedListing.is_reference_coordinate]
+                    ]}
+                  />
+
+                  <DetailGrid
+                    title="Liên hệ và thời gian"
+                    rows={[
+                      ["Người đăng", selectedListing.contact_name],
+                      ["Điện thoại", selectedListing.contact_phone],
+                      ["Zalo", selectedListing.contact_zalo_url],
+                      ["Facebook", selectedListing.contact_facebook_url],
+                      ["Ngày đăng", selectedListing.posted_at],
+                      ["Ngày hết hạn", selectedListing.expired_at],
+                      ["Độ mới", selectedListing.freshness_days ? `${selectedListing.freshness_days} ngày` : null],
+                      ["Mã nguồn", selectedListing.source_post_id],
+                      ["Hash nội dung", selectedListing.content_hash]
+                    ]}
+                  />
+
+                  <section className="detail-section">
+                    <h3>Tiện ích nhận diện</h3>
+                    <div className="amenity-grid">
+                      {AMENITY_FLAGS.map((flag) => (
+                        <span className={selectedListing[flag.key] ? "active" : ""} key={flag.key}>
+                          {flag.label}: {selectedListing[flag.key] ? "Có" : "Không"}
+                        </span>
+                      ))}
+                    </div>
+                    <p>{selectedListing.amenities_text || "Chưa có chuỗi tiện ích gốc"}</p>
+                  </section>
+
+                  <section className="detail-section">
+                    <h3>Mô tả tin</h3>
+                    <p className="description-text">{cleanDisplayText(selectedListing.description_clean) || "Chưa có mô tả"}</p>
+                  </section>
+
                   <a className="primary-link" href={selectedListing.canonical_url} target="_blank" rel="noreferrer">
                     Mở tin gốc
                   </a>
@@ -664,6 +818,7 @@ export function ListingsExplorer({ initialData }: Props) {
               <span>Khu vực nổi bật: {topDistrict}</span>
               <span>Giá trung vị: {formatShortCurrency(medianPrice)}</span>
               <span>Độ đầy đủ TB: {avgScore ? `${avgScore.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}/100` : "Chưa có"}</span>
+              <span>Bao phủ ảnh: {formatPercent(imageCoverage)}</span>
             </div>
           </div>
 
@@ -685,17 +840,54 @@ export function ListingsExplorer({ initialData }: Props) {
             </article>
             <article className="kpi-card">
               <span>Ảnh tin đăng</span>
-              <strong>{formatPercent(visibleItems.length ? (imageCount / visibleItems.length) * 100 : 0)}</strong>
+              <strong>{formatPercent(imageCoverage)}</strong>
               <p>{imageCount.toLocaleString("vi-VN")} tin có ảnh</p>
             </article>
             <article className="kpi-card">
               <span>Tọa độ bản đồ</span>
-              <strong>{formatPercent(visibleItems.length ? (markerCount / visibleItems.length) * 100 : 0)}</strong>
+              <strong>{formatPercent(markerCoverage)}</strong>
               <p>{exactCount.toLocaleString("vi-VN")} tin sát địa chỉ</p>
             </article>
           </div>
 
           <div className="dashboard-grid">
+            <article className="analytics-panel">
+              <div className="panel-title">
+                <h3>Tổng quan nguồn</h3>
+                <span>Donut chart</span>
+              </div>
+              <DonutChart items={sourceChart} total={visibleItems.length} />
+            </article>
+
+            <article className="analytics-panel">
+              <div className="panel-title">
+                <h3>Độ tin cậy tọa độ</h3>
+                <span>Donut chart</span>
+              </div>
+              <DonutChart items={precisionChart} total={visibleItems.length} />
+            </article>
+
+            <article className="analytics-panel wide-panel insight-panel">
+              <div className="panel-title">
+                <h3>Nhận định nhanh</h3>
+                <span>Tự tính từ dữ liệu lọc</span>
+              </div>
+              <div className="insight-list">
+                <p>
+                  Khu vực nhiều tin nhất là <strong>{topDistrict}</strong>, chiếm {districtChart[0] ? formatPercent((districtChart[0].value / Math.max(visibleItems.length, 1)) * 100) : "0%"} tập đang xem.
+                </p>
+                <p>
+                  Giá trung vị đang ở mức <strong>{formatShortCurrency(medianPrice)}</strong>, phù hợp để so sánh nhanh với giá trung bình {formatShortCurrency(avgPrice)}.
+                </p>
+                <p>
+                  Tỷ lệ tin có tọa độ là <strong>{formatPercent(markerCoverage)}</strong>; trong đó {exactCount.toLocaleString("vi-VN")} tin có tọa độ sát địa chỉ.
+                </p>
+                <p>
+                  Dữ liệu ảnh đạt <strong>{formatPercent(imageCoverage)}</strong>, giúp preview tin và kiểm tra chất lượng listing tốt hơn.
+                </p>
+              </div>
+            </article>
+
             <article className="analytics-panel wide-panel">
               <div className="panel-title">
                 <h3>Phân bổ giá thuê</h3>
@@ -726,6 +918,14 @@ export function ListingsExplorer({ initialData }: Props) {
                 <span>Nhóm diện tích</span>
               </div>
               <ChartList items={areaChart} total={visibleItems.length} />
+            </article>
+
+            <article className="analytics-panel">
+              <div className="panel-title">
+                <h3>Tiện ích phổ biến</h3>
+                <span>Nhận diện từ nội dung</span>
+              </div>
+              <ChartList items={amenityChart.slice(0, 8)} total={visibleItems.length} />
             </article>
 
             <article className="analytics-panel">

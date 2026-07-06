@@ -31,8 +31,8 @@ Completed:
 - Private GitHub repo was created and pushed.
 - Render Blueprint config is present in `render.yaml`.
 - Backend Render Dockerfile is present in `backend/Dockerfile.render`.
-- Deploy CSV is present in `crawler/artifacts/deploy/listings_deploy.csv`.
-- Deploy CSV has 3,000 rows: 1,000 each from `phongtro123`, `nhatot`, and `mogi`.
+- Legacy compact deploy CSV is present in `crawler/artifacts/deploy/listings_deploy.csv`.
+- Legacy compact deploy CSV has 3,000 rows: 1,000 each from `phongtro123`, `nhatot`, and `mogi`.
 - Local cloud-mode backend test passed with `PT_DATABASE_ENABLED=false`.
 - Web production build passed.
 - Local self-audit passed.
@@ -48,6 +48,8 @@ GitHub Pages fallback:
 
 - A static frontend deploy path has been added so the project can go online without Render/Vercel login.
 - Static JSON data lives at `web/public/data/listings-map.json`.
+- Full online data now uses a small manifest plus chunk files under `web/public/data/listings-map-chunks/`.
+- The full static export contains 56,061 valid listings and 52 source fields from the curated CSV; one malformed CSV row is skipped during export.
 - GitHub Actions workflow lives at `.github/workflows/pages.yml`.
 - Frontend is now redesigned as a map-first rental workspace: source filters, source-colored markers, listing sidebar, and visible marker count.
 - Live Pages URL:
@@ -60,11 +62,15 @@ Verified:
 
 ```text
 HTML status: 200
-JSON total: 3000
-JSON returned: 3000
-phongtro123: 1000
-nhatot: 1000
-mogi: 1000
+JSON manifest total: 56061
+JSON manifest returned: 56061
+chunks: 12
+phongtro123: 44851
+nhatot: 10065
+mogi: 1005
+thuephongtro: 84
+batdongsan: 35
+alonhadat: 21
 ```
 
 ## GitHub Pages static deploy

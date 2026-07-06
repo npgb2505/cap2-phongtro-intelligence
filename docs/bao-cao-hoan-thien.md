@@ -60,18 +60,21 @@ Nguon trong curated CSV:
 | batdongsan | 35 |
 | alonhadat | 1 |
 
-Deploy snapshot online:
+Deploy online:
 
 | Nguon | So tin |
 | --- | ---: |
-| phongtro123 | 1,000 |
-| nhatot | 1,000 |
-| mogi | 1,000 |
+| phongtro123 | 44,851 |
+| nhatot | 10,065 |
+| mogi | 1,005 |
+| thuephongtro | 84 |
+| batdongsan | 35 |
+| alonhadat | 21 |
 
-Tong deploy snapshot:
+Tong static export online:
 
 ```text
-3000 tin
+56061 tin hop le, chia thanh manifest + 12 chunk JSON
 ```
 
 ## 4. Kien truc
@@ -224,8 +227,8 @@ passed=true
 backend health OK
 map API total=55896
 web HTTP 200
-curated sources: phongtro123=44818, nhatot=10028, mogi=1005
-deploy snapshot: phongtro123=1000, nhatot=1000, mogi=1000
+curated sources: phongtro123=44851, nhatot=10065, mogi=1005, thuephongtro=84, batdongsan=35, alonhadat=21
+static export online: 56061 tin hop le, 12 chunk JSON
 autostart OK
 watchdog heartbeat OK
 ```
@@ -250,11 +253,15 @@ Live URL check:
 
 ```text
 HTML status: 200
-JSON total: 3000
-JSON returned: 3000
-phongtro123: 1000
-nhatot: 1000
-mogi: 1000
+JSON manifest total: 56061
+JSON manifest returned: 56061
+chunks: 12
+phongtro123: 44851
+nhatot: 10065
+mogi: 1005
+thuephongtro: 84
+batdongsan: 35
+alonhadat: 21
 ```
 
 ## 10. AWS status
@@ -270,7 +277,8 @@ Da them guard:
 ## 11. Gioi han hien tai
 
 - GitHub Pages la static deploy, nen khong co backend query dong tren server.
-- Du lieu online la snapshot 3,000 tin, khong phai toan bo 55,971 tin.
+- Du lieu online la full static export 56,061 tin hop le, chia chunk de tranh gioi han file lon cua GitHub.
+- UI render danh sach va marker theo batch/gioi han de trinh duyet khong bi treo, con dashboard tinh tren toan bo tap dang loc.
 - Neu muon API online that, co the tiep tuc huong Render Free backend da chuan bi san trong `render.yaml`, nhung can dang nhap Render dashboard.
 - Render Free co cold start va gioi han free tier, nen GitHub Pages van la huong an toan nhat cho demo.
 
@@ -279,6 +287,6 @@ Da them guard:
 Du an da co ban local day du va ban online mien phi:
 
 - Local: day du 55k+ tin, backend + web + watchdog + audit.
-- Online: GitHub Pages chay that, co 3,000 tin tu 3 nguon lon.
+- Online: GitHub Pages chay that, co 56,061 tin hop le tu 6 nguon.
 - Tai lieu van hanh va deploy da duoc cap nhat.
 - Khong phat sinh chi phi AWS.

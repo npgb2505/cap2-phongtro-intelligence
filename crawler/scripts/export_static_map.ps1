@@ -11,9 +11,9 @@ if (-not (Test-Path $python)) {
 Push-Location $repoRoot
 try {
     & $python -m app.static_map_export `
-        --source-csv "crawler\artifacts\deploy\listings_deploy.csv" `
+        --source-csv "crawler\artifacts\curated\toan-quoc\listings_curated.csv" `
         --output-json "web\public\data\listings-map.json" `
-        --ensure-snapshot
+        --chunk-size 5000
     exit $LASTEXITCODE
 }
 finally {
