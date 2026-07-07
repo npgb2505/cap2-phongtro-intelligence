@@ -12,6 +12,7 @@ const ListingsMap = dynamic(() => import("./listings-map").then((module) => modu
 
 type Props = {
   initialData: ListingMapResponse;
+  isLoading?: boolean;
 };
 
 type TabKey = "search" | "dashboard";
@@ -23,7 +24,8 @@ type ChartItem = {
 };
 
 const RESULT_BATCH_SIZE = 500;
-const MAP_MARKER_LIMIT = 6000;
+const INITIAL_MAP_MARKER_LIMIT = 1500;
+const MAP_MARKER_BATCH_SIZE = 1500;
 
 const SOURCE_LABELS: Record<string, string> = {
   phongtro123: "Phongtro123",
@@ -271,7 +273,7 @@ function DetailGrid({ title, rows }: { title: string; rows: Array<[string, strin
   );
 }
 
-export function ListingsExplorer({ initialData }: Props) {
+export function ListingsExplorer({ initialData, isLoading = false }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>("search");
   const [selectedProvince, setSelectedProvince] = useState<string>("all");
   const [selectedDistrict, setSelectedDistrict] = useState<string>("all");
@@ -286,6 +288,7 @@ export function ListingsExplorer({ initialData }: Props) {
   const [sortBy, setSortBy] = useState<(typeof SORT_OPTIONS)[number]["value"]>("recommended");
   const [searchText, setSearchText] = useState("");
   const [resultLimit, setResultLimit] = useState(RESULT_BATCH_SIZE);
+  const [mapMarkerLimit, setMapMarkerLimit] = useState(INITIAL_MAP_MARKER_LIMIT);
   const [selectedListingId, setSelectedListingId] = useState<string | null>(initialData.items[0]?.id ?? null);
   const deferredSearch = useDeferredValue(searchText);
 
@@ -357,7 +360,7 @@ export function ListingsExplorer({ initialData }: Props) {
   const selectedListing = visibleItems.find((item) => item.id === selectedListingId) ?? visibleItems[0] ?? null;
   const selectedImage = imageUrl(selectedListing);
   const displayedItems = visibleItems.slice(0, resultLimit);
-  const mapItems = visibleItems.filter((item) => item.latitude && item.longitude).slice(0, MAP_MARKER_LIMIT);
+  const mapItems = visibleItems.filter((item) => item.latitude && item.longitude).slice(0, mapMarkerLimit);
   const markerCount = visibleItems.filter((item) => item.latitude && item.longitude).length;
   const imageCount = visibleItems.filter((item) => imageUrl(item)).length;
   const exactCount = visibleItems.filter((item) => item.geocode_precision === "exact").length;
@@ -418,6 +421,7 @@ export function ListingsExplorer({ initialData }: Props) {
     setSearchText("");
     setSortBy("recommended");
     setResultLimit(RESULT_BATCH_SIZE);
+    setMapMarkerLimit(INITIAL_MAP_MARKER_LIMIT);
   }
 
   return (
@@ -583,6 +587,13 @@ export function ListingsExplorer({ initialData }: Props) {
         </div>
       </section>
 
+      {isLoading ? (
+        <section className="loading-banner" aria-live="polite">
+          <strong>Đang tải toàn bộ dữ liệu phòng trọ</strong>
+          <span>Hệ thống đang ghép manifest và 12 chunk JSON, có thể mất vài giây vì dataset hơn 56 nghìn tin.</span>
+        </section>
+      ) : null}
+
       {activeTab === "search" ? (
         <section className="search-layout">
           <aside className="results-panel" aria-label="Danh sách phòng trọ">
@@ -666,6 +677,15 @@ export function ListingsExplorer({ initialData }: Props) {
                 <span>Đang vẽ {mapItems.length.toLocaleString("vi-VN")} / {markerCount.toLocaleString("vi-VN")} marker</span>
                 <span>{exactCount.toLocaleString("vi-VN")} tọa độ sát địa chỉ</span>
                 <span>{referenceCount.toLocaleString("vi-VN")} tọa độ tham chiếu</span>
+                {markerCount > mapItems.length ? (
+                  <button
+                    className="marker-more-button"
+                    type="button"
+                    onClick={() => setMapMarkerLimit((current) => current + MAP_MARKER_BATCH_SIZE)}
+                  >
+                    Vẽ thêm marker
+                  </button>
+                ) : null}
               </div>
             </div>
 

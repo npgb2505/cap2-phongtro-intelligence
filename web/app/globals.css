@@ -263,6 +263,27 @@ button:disabled {
   justify-content: center;
 }
 
+.loading-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 12px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 8px;
+  background: linear-gradient(90deg, #eff6ff, #ecfeff);
+  color: var(--muted);
+  padding: 12px 14px;
+}
+
+.loading-banner strong {
+  color: var(--accent-dark);
+}
+
+.loading-banner span {
+  font-size: 0.88rem;
+}
+
 .search-layout {
   display: grid;
   grid-template-columns: 390px minmax(0, 1fr) 360px;
@@ -553,6 +574,17 @@ button:disabled {
   border-radius: 8px;
   background: var(--surface-blue);
   color: var(--accent-dark);
+  font-weight: 850;
+}
+
+.marker-more-button {
+  min-height: 28px;
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--accent-dark);
+  padding: 0 10px;
+  font-size: 0.72rem;
   font-weight: 850;
 }
 

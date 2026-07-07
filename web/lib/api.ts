@@ -1,73 +1,37 @@
 import { ListingMapResponse } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const STATIC_DATA_PATH = process.env.NEXT_PUBLIC_STATIC_DATA_PATH;
 
-export const fallbackMapListings: ListingMapResponse = {
-  total: 2,
-  returned: 2,
-  available_provinces: ["Ho Chi Minh"],
-  geocode_summary: { district: 2 },
-  items: [
-    {
-      id: "fallback-1",
-      source_name: "fallback",
-      source_post_id: "708737",
-      title: "Phong tro Quan 11 - giap Quan 10",
-      price_value: 4500000,
-      price_per_m2: 300000,
-      area_m2: 15,
-      street_address: "49/10 Duong Au Co",
-      ward: "Phuong Hoa Binh",
-      full_address: "49/10 Duong Au Co, Phuong Hoa Binh, Ho Chi Minh",
-      province: "Ho Chi Minh",
-      district: "Quan 11",
-      latitude: 10.7672,
-      longitude: 106.6417,
-      geocode_precision: "district",
-      is_reference_coordinate: true,
-      room_type: "phong_tro",
-      furnishing_level: "full",
-      image_count: 0,
-      primary_image_url: null,
-      amenity_count: 4,
-      record_completeness_score: 82,
-      thumbnail_url: null,
-      canonical_url: "https://phongtro123.com/",
-      status: "active"
-    },
-    {
-      id: "fallback-2",
-      source_name: "fallback",
-      source_post_id: "702592",
-      title: "Ky tuc xa Quan 5",
-      price_value: 1300000,
-      price_per_m2: 65000,
-      area_m2: 20,
-      street_address: "Nguyen Trai",
-      ward: null,
-      full_address: "Nguyen Trai, Quan 5, Ho Chi Minh",
-      province: "Ho Chi Minh",
-      district: "Quan 5",
-      latitude: 10.7585,
-      longitude: 106.6811,
-      geocode_precision: "district",
-      is_reference_coordinate: true,
-      room_type: "o_ghep",
-      furnishing_level: "partial",
-      image_count: 0,
-      primary_image_url: null,
-      amenity_count: 2,
-      record_completeness_score: 75,
-      thumbnail_url: null,
-      canonical_url: "https://phongtro123.com/",
-      status: "active"
-    }
-  ]
+export const emptyMapListings: ListingMapResponse = {
+  total: 0,
+  returned: 0,
+  available_provinces: [],
+  geocode_summary: {},
+  deploy_source_counts: {},
+  skipped_rows: 0,
+  items: []
 };
 
-function dataUrl() {
-  return STATIC_DATA_PATH || `${API_URL}/listings/map?limit=900`;
+function staticDataUrl() {
+  if (STATIC_DATA_PATH) {
+    return STATIC_DATA_PATH;
+  }
+
+  if (typeof window !== "undefined") {
+    const baseSegment = window.location.pathname.split("/").filter(Boolean)[0];
+    return baseSegment ? `/${baseSegment}/data/listings-map.json` : "/data/listings-map.json";
+  }
+
+  return "/data/listings-map.json";
+}
+
+function dataUrls() {
+  const urls = [staticDataUrl()];
+  if (API_URL) {
+    urls.push(`${API_URL}/listings/map?limit=900`);
+  }
+  return Array.from(new Set(urls));
 }
 
 function resolveChunkUrl(manifestUrl: string, chunkPath: string) {
@@ -80,37 +44,49 @@ function resolveChunkUrl(manifestUrl: string, chunkPath: string) {
   return new URL(chunkPath, baseUrl).toString();
 }
 
-export async function fetchMapListings(): Promise<ListingMapResponse> {
-  try {
-    const manifestUrl = dataUrl();
-    const response = await fetch(manifestUrl, {
-      cache: "no-store"
-    });
-    if (!response.ok) {
-      throw new Error("Failed to load listings");
-    }
-    const payload = (await response.json()) as ListingMapResponse;
-    if (!payload.chunks?.length) {
-      return payload;
-    }
-
-    const chunkResponses = await Promise.all(
-      payload.chunks.map(async (chunkPath) => {
-        const chunkResponse = await fetch(resolveChunkUrl(manifestUrl, chunkPath), { cache: "no-store" });
-        if (!chunkResponse.ok) {
-          throw new Error(`Failed to load chunk ${chunkPath}`);
-        }
-        return (await chunkResponse.json()) as Pick<ListingMapResponse, "items">;
-      })
-    );
-
-    const items = chunkResponses.flatMap((chunk) => chunk.items ?? []);
-    return {
-      ...payload,
-      returned: items.length,
-      items
-    };
-  } catch {
-    return fallbackMapListings;
+async function fetchJson(url: string): Promise<ListingMapResponse> {
+  const response = await fetch(url, {
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load listings from ${url}`);
   }
+
+  const payload = (await response.json()) as ListingMapResponse;
+  if (!payload.chunks?.length) {
+    return payload;
+  }
+
+  const chunkResponses = await Promise.all(
+    payload.chunks.map(async (chunkPath) => {
+      const chunkUrl = resolveChunkUrl(url, chunkPath);
+      const chunkResponse = await fetch(chunkUrl, { cache: "no-store" });
+      if (!chunkResponse.ok) {
+        throw new Error(`Failed to load chunk ${chunkUrl}`);
+      }
+      return (await chunkResponse.json()) as Pick<ListingMapResponse, "items">;
+    })
+  );
+
+  const items = chunkResponses.flatMap((chunk) => chunk.items ?? []);
+  return {
+    ...payload,
+    returned: items.length,
+    items
+  };
+}
+
+export async function fetchMapListings(): Promise<ListingMapResponse> {
+  const errors: unknown[] = [];
+
+  for (const url of dataUrls()) {
+    try {
+      return await fetchJson(url);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  console.error("Unable to load listings data", errors);
+  return emptyMapListings;
 }

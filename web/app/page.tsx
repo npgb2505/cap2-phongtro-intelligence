@@ -3,17 +3,19 @@
 import { useEffect, useState } from "react";
 
 import { ListingsExplorer } from "../components/listings-explorer";
-import { fallbackMapListings, fetchMapListings } from "../lib/api";
+import { emptyMapListings, fetchMapListings } from "../lib/api";
 import { ListingMapResponse } from "../lib/types";
 
 export default function HomePage() {
-  const [data, setData] = useState<ListingMapResponse>(fallbackMapListings);
+  const [data, setData] = useState<ListingMapResponse>(emptyMapListings);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     fetchMapListings().then((nextData) => {
       if (!cancelled) {
         setData(nextData);
+        setIsLoading(false);
       }
     });
     return () => {
@@ -21,5 +23,5 @@ export default function HomePage() {
     };
   }, []);
 
-  return <ListingsExplorer initialData={data} />;
+  return <ListingsExplorer initialData={data} isLoading={isLoading} />;
 }
