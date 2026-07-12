@@ -6,39 +6,39 @@ Production-grade room-rental data platform focused on multi-source room-rental i
 
 This project is intentionally designed like a real product:
 
-- `local bootstrap` for the first large crawl to save AWS credits
-- `incremental cloud sync` for daily updates only
+- `local bootstrap` for the first large crawl to avoid cloud cost spikes
+- `GitHub Actions ETL` for safe manual or scheduled updates
 - `raw + staging + curated` data layers
-- `FastAPI` for serving search and map endpoints
-- `Next.js` map frontend where each listing is a marker
-- `AWS-first` deployment model using the user's available credits
+- `Supabase Postgres` for the cloud curated database
+- `Next.js` map frontend on Vercel, with GitHub Pages/static JSON fallback
+- no AWS/GCP default path because credits/free-trial signup are unavailable
 
 ## Architecture at a glance
 
 ```text
 Local Bootstrap Crawl
   -> raw JSON / HTML snapshots
-  -> upload to S3
-  -> normalize + load into PostgreSQL
+  -> normalize + curated CSV
+  -> static JSON chunks for fallback
 
-Daily Incremental Sync
-  EventBridge Scheduler
-    -> ECS Fargate crawler
-    -> detect new / updated / expired listings
-    -> write raw snapshots to S3
-    -> upsert curated tables in PostgreSQL
+Cloud Update Path
+  GitHub Actions manual/schedule
+    -> incremental crawler
+    -> curated transform
+    -> upsert Supabase Postgres
 
 Serving Layer
-  FastAPI
-    -> filter/search endpoints
-    -> map bbox endpoint
-    -> listing detail endpoint
+  Supabase REST/views
+    -> v_listing_map
+    -> dashboard aggregate views
+    -> RLS/read-only policy
 
 Frontend
-  Next.js
+  Next.js on Vercel
     -> map view
     -> marker popups
     -> sidebar result list
+    -> fallback to static JSON chunks
 ```
 
 ## Repo layout
@@ -61,8 +61,9 @@ web/         Next.js map frontend
 - Concurrent detail crawling added for faster local backfill
 - Map-based frontend scaffolded
 - Docker Compose for local dev scaffolded
-- Terraform skeleton for AWS scaffolded
+- Terraform skeleton for AWS scaffolded as legacy/optional infra
 - Local recurring automations created for backfill and daily sync
+- Supabase/Vercel/GitHub Actions deployment guide, SQL views, and manual ETL workflow added
 
 ## Delivery strategy
 
@@ -75,15 +76,15 @@ web/         Next.js map frontend
 
 ### Phase 2
 
-- Upload raw artifacts to S3
-- Deploy database and API
-- Deploy Next.js map frontend
+- Create Supabase Free project
+- Load compact curated CSV first, then full curated CSV if free tier allows
+- Deploy Next.js frontend to Vercel
 
 ### Phase 3
 
-- Enable daily incremental crawl on AWS
+- Enable GitHub Actions `crawl_then_load` on a low schedule after manual runs pass
 - Detect inserts, updates, expirations
-- Add monitoring and alerts
+- Add Supabase dashboard views and usage checks
 
 ## Local development
 
@@ -134,11 +135,13 @@ Use `--sources phongtro123`, `--sources alonhadat`, or a comma-separated list to
 
 For current verified commands, resumable nationwide crawl, and local automation details, see [docs/local-operations.md](/D:/UNIVERSITY/Cap2/docs/local-operations.md).
 For the live field inventory confirmed from the website, see [docs/data-inventory.md](/D:/UNIVERSITY/Cap2/docs/data-inventory.md).
-For the cloud deployment readiness check and rollout flow, see [docs/cloud-deployment-flow.md](/D:/UNIVERSITY/Cap2/docs/cloud-deployment-flow.md).
+For the current Supabase/Vercel/GitHub Actions cloud route, see [docs/supabase-vercel-github-actions.md](/D:/UNIVERSITY/Cap2/docs/supabase-vercel-github-actions.md).
+For the older cloud deployment readiness check and rollout flow, see [docs/cloud-deployment-flow.md](/D:/UNIVERSITY/Cap2/docs/cloud-deployment-flow.md).
 For the latest handover, verified data counts, local URLs, and auto-restart setup, see [docs/handover.md](/D:/UNIVERSITY/Cap2/docs/handover.md).
 For a Vietnamese usage guide with AWS credit safeguards, see [docs/huong-dan-su-dung.md](/D:/UNIVERSITY/Cap2/docs/huong-dan-su-dung.md).
-For the current no-AWS free/near-free deployment route, see [docs/free-deployment.md](/D:/UNIVERSITY/Cap2/docs/free-deployment.md).
-For the current GitHub/Render/Vercel deployment status, see [docs/online-deploy-status.md](/D:/UNIVERSITY/Cap2/docs/online-deploy-status.md).
+For the no-AWS static fallback route, see [docs/free-deployment.md](/D:/UNIVERSITY/Cap2/docs/free-deployment.md).
+For the older database-backed fallback with Neon, Render, and Vercel, see [docs/cloud-option-2-neon-render-vercel.md](/D:/UNIVERSITY/Cap2/docs/cloud-option-2-neon-render-vercel.md).
+For the current online deployment status, see [docs/online-deploy-status.md](/D:/UNIVERSITY/Cap2/docs/online-deploy-status.md).
 For the final Vietnamese completion report, see [docs/bao-cao-hoan-thien.md](/D:/UNIVERSITY/Cap2/docs/bao-cao-hoan-thien.md).
 
 Live no-AWS static demo:
@@ -155,7 +158,15 @@ npm install
 npm run dev
 ```
 
-## AWS target stack
+## Current low-cost target stack
+
+- `Supabase Free Postgres` for `curated_listings`
+- `Supabase views/RLS` for read-only frontend access
+- `GitHub Actions` for manual/scheduled ETL and database upsert
+- `Vercel Hobby` for the Next.js frontend
+- `GitHub Pages/static JSON` as fallback when Supabase is paused or limited
+
+## Legacy AWS target stack
 
 - `Amazon S3` for raw zone and export artifacts
 - `Amazon RDS PostgreSQL` for curated serving data
@@ -167,8 +178,8 @@ npm run dev
 
 ## Next practical steps
 
-1. Bulk-run the nationwide backfill until the historical queue is exhausted.
-2. Implement S3 upload for crawler artifacts.
-3. Wire incremental crawler completion to PostgreSQL upsert/load.
-4. Expand Terraform from foundation resources into deployable ECS/App Runner services.
-5. Add Amazon Location geocoding and caching for map markers.
+1. Create a Supabase Free project and add GitHub secret `SUPABASE_DB_URL`.
+2. Run `.github/workflows/supabase-etl.yml` with `run_mode=load_existing_csv`.
+3. Let the workflow apply `sql/schema.sql`, load `crawler/artifacts/deploy/listings_deploy.csv`, then apply `sql/supabase_views.sql`.
+4. Deploy `web/` on Vercel with `web/env.vercel.example` values.
+5. Test `crawl_then_load` manually before enabling any schedule.

@@ -1,0 +1,116 @@
+name: Supabase ETL
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: "Use load_existing_csv for safe deploy, or crawl_then_load for incremental crawl before loading"
+        required: true
+        default: "load_existing_csv"
+        type: choice
+        options:
+          - load_existing_csv
+          - crawl_then_load
+      csv_path:
+        description: "Curated CSV path to load into Supabase"
+        required: false
+        default: "crawler/artifacts/deploy/listings_deploy.csv"
+      city:
+        description: "Crawler city scope when run_mode=crawl_then_load"
+        required: false
+        default: "all"
+      pages:
+        description: "Incremental search pages per source when run_mode=crawl_then_load"
+        required: false
+        default: "1"
+      max_detail_pages:
+        description: "Max detail pages per source when run_mode=crawl_then_load"
+        required: false
+        default: "5"
+      sources:
+        description: "Crawler sources when run_mode=crawl_then_load"
+        required: false
+        default: "phongtro123,nhatot,mogi"
+      exact_geocode_limit:
+        description: "Exact geocode budget when run_mode=crawl_then_load"
+        required: false
+        default: "0"
+
+concurrency:
+  group: supabase-etl
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check required Supabase secret
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "Missing GitHub Actions secret: SUPABASE_DB_URL"
+            echo "Add a Supabase pooled/direct Postgres connection string before running this workflow."
+            exit 1
+          fi
+
+      - name: Install backend
+        working-directory: backend
+        run: pip install -e .
+
+      - name: Apply base Supabase schema
+        working-directory: backend
+        env:
+          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m app.apply_sql --file ../sql/schema.sql
+
+      - name: Install crawler
+        if: ${{ inputs.run_mode == 'crawl_then_load' }}
+        working-directory: crawler
+        run: pip install -e .
+
+      - name: Run incremental crawler
+        if: ${{ inputs.run_mode == 'crawl_then_load' }}
+        working-directory: crawler
+        run: >
+          python -m app.main incremental
+          --city "${{ inputs.city }}"
+          --pages "${{ inputs.pages }}"
+          --max-detail-pages "${{ inputs.max_detail_pages }}"
+          --sources "${{ inputs.sources }}"
+
+      - name: Build curated dataset
+        if: ${{ inputs.run_mode == 'crawl_then_load' }}
+        working-directory: crawler
+        run: python -m app.main transform-curated --exact-geocode-limit "${{ inputs.exact_geocode_limit }}"
+
+      - name: Load curated CSV into Supabase
+        working-directory: backend
+        env:
+          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ "${{ inputs.run_mode }}" = "crawl_then_load" ]; then
+            python -m app.load_curated --csv ../crawler/artifacts/curated/toan-quoc/listings_curated.csv
+          else
+            python -m app.load_curated --csv ../${{ inputs.csv_path }}
+          fi
+
+      - name: Apply Supabase views and RLS
+        working-directory: backend
+        env:
+          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m app.apply_sql --file ../sql/supabase_views.sql
+
+      - name: Verify Supabase load
+        working-directory: backend
+        env:
+          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m app.check_supabase_load --min-rows 1

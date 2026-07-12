@@ -1,6 +1,6 @@
 # Online Deploy Status
 
-Updated: 2026-07-07
+Updated: 2026-07-12
 
 ## Repository
 
@@ -29,8 +29,13 @@ Completed:
 - Local Git repo was repaired by backing up the broken `.git` directory.
 - Fresh Git repo was initialized.
 - Private GitHub repo was created and pushed.
-- Render Blueprint config is present in `render.yaml`.
-- Backend Render Dockerfile is present in `backend/Dockerfile.render`.
+- Supabase/Vercel/GitHub Actions route is now the primary cloud route.
+- Supabase guide is present in `docs/supabase-vercel-github-actions.md`.
+- Supabase SQL views/RLS sample is present in `sql/supabase_views.sql`.
+- GitHub Actions Supabase ETL workflow is present in `.github/workflows/supabase-etl.yml`.
+- Frontend loader in `web/lib/api.ts` now tries Supabase first, then legacy API, then static JSON.
+- Render Blueprint config is present in `render.yaml` as a legacy fallback.
+- Backend Render Dockerfile is present in `backend/Dockerfile.render` as a legacy fallback.
 - Legacy compact deploy CSV is present in `crawler/artifacts/deploy/listings_deploy.csv`.
 - Legacy compact deploy CSV has 3,000 rows: 1,000 each from `phongtro123`, `nhatot`, and `mogi`.
 - Local cloud-mode backend test passed with `PT_DATABASE_ENABLED=false`.
@@ -40,9 +45,11 @@ Completed:
 
 Waiting:
 
-- Render dashboard login is still required.
-- Render GitHub connection must allow repo `cap2-phongtro-intelligence`.
-- After backend deploy, Vercel frontend import must be configured with the Render API URL.
+- Supabase project must be created by the user.
+- GitHub secret `SUPABASE_DB_URL` must be added before running `.github/workflows/supabase-etl.yml`.
+- Supabase SQL is applied automatically by the workflow in order: `sql/schema.sql`, load CSV, then `sql/supabase_views.sql`.
+- Vercel frontend import must be configured with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- The older Neon Postgres + Render API + Vercel frontend route remains documented in `docs/cloud-option-2-neon-render-vercel.md`.
 
 GitHub Pages fallback:
 
@@ -57,6 +64,56 @@ GitHub Pages fallback:
 ```text
 https://npgb2505.github.io/cap2-phongtro-intelligence/
 ```
+
+## Primary Supabase/Vercel/GitHub Actions cloud path
+
+Use:
+
+```text
+docs/supabase-vercel-github-actions.md
+```
+
+Key files:
+
+```text
+sql/schema.sql
+sql/supabase_views.sql
+backend/app/apply_sql.py
+backend/app/load_curated.py
+backend/app/check_supabase_load.py
+.github/workflows/supabase-etl.yml
+web/lib/api.ts
+web/env.vercel.example
+```
+
+Safe rollout:
+
+1. Create Supabase Free project.
+2. Add GitHub secret:
+
+```text
+SUPABASE_DB_URL=postgresql+psycopg://...
+```
+
+3. Run workflow `Supabase ETL` with:
+
+```text
+run_mode=load_existing_csv
+csv_path=crawler/artifacts/deploy/listings_deploy.csv
+```
+
+4. The workflow applies `sql/schema.sql`, loads CSV, applies `sql/supabase_views.sql`, then runs `backend/app/check_supabase_load.py`.
+5. Deploy `web/` to Vercel with:
+
+```text
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-public-key>
+NEXT_PUBLIC_SUPABASE_LISTINGS_VIEW=v_listing_map
+NEXT_PUBLIC_SUPABASE_PAGE_SIZE=1000
+NEXT_PUBLIC_SUPABASE_MAX_ROWS=60000
+```
+
+6. Only after this path works, test `run_mode=crawl_then_load` with small values.
 
 Verified:
 
@@ -106,7 +163,7 @@ https://github.com/npgb2505/cap2-phongtro-intelligence/actions/workflows/pages.y
 
 Click `Run workflow` on branch `main`.
 
-## Render backend dashboard steps
+## Legacy Render backend dashboard steps
 
 1. Open Render:
 
@@ -149,7 +206,7 @@ Expected health:
 {"status":"ok","environment":"production"}
 ```
 
-## Vercel frontend dashboard steps
+## Legacy Vercel frontend through Render API
 
 1. Open Vercel import:
 

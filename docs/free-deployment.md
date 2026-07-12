@@ -6,15 +6,30 @@ This path avoids AWS completely. It is designed for project demo delivery after 
 
 ## Chosen architecture
 
+This document describes the cheapest CSV/static fallback. If you want the current database-backed cloud setup with Supabase Postgres, Vercel frontend, and GitHub Actions ETL, use:
+
 ```text
-Render Free Web Service
-  -> FastAPI backend
-  -> Docker image includes a compact curated deploy CSV snapshot
-  -> no cloud database required
+docs/supabase-vercel-github-actions.md
+```
+
+The older Neon/Render/Vercel route is still documented as a fallback:
+
+```text
+docs/cloud-option-2-neon-render-vercel.md
+```
+
+```text
+Supabase Free Postgres
+  -> curated_listings database
+  -> read-only views for map/dashboard
+
+GitHub Actions
+  -> manual load_existing_csv
+  -> optional crawl_then_load after manual test passes
 
 Vercel Hobby
   -> Next.js frontend
-  -> calls Render backend through NEXT_PUBLIC_API_URL
+  -> reads Supabase by NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
 ```
 
 No-login fallback:
@@ -29,11 +44,11 @@ GitHub Pages
 Why this route:
 
 - no AWS resource is created
-- no managed PostgreSQL is required
+- Supabase is the preferred managed PostgreSQL option when a cloud database is needed
 - a verified deploy CSV with 3 sources x 1,000 listings is shipped with the backend image
 - the app remains easy to demo online
 
-Tradeoff: Render Free services spin down after idle time, so the first request after a quiet period can take about a minute to wake up.
+Tradeoff: Supabase Free has size/egress limits and may pause inactive projects, so GitHub Pages/static JSON remains the safest demo fallback.
 
 ## Current verified data
 
@@ -49,7 +64,29 @@ Tradeoff: Render Free services spin down after idle time, so the first request a
   - `nhatot`: 1,000
   - `mogi`: 1,000
 
-## Backend: Render Free
+## Current database path: Supabase Free
+
+Use [docs/supabase-vercel-github-actions.md](/D:/UNIVERSITY/Cap2/docs/supabase-vercel-github-actions.md) for the full flow. Key files:
+
+- `sql/schema.sql`
+- `sql/supabase_views.sql`
+- `.github/workflows/supabase-etl.yml`
+- `web/lib/api.ts`
+- `web/env.vercel.example`
+
+Start with the compact CSV:
+
+```text
+crawler/artifacts/deploy/listings_deploy.csv
+```
+
+Then load the full curated CSV only after checking Supabase free-tier usage:
+
+```text
+crawler/artifacts/curated/toan-quoc/listings_curated.csv
+```
+
+## Legacy backend: Render Free
 
 Files added for Render:
 
