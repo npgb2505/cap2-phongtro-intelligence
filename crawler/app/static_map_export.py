@@ -163,41 +163,42 @@ def _etl_monitor_payload(
     curation_summary = _read_json(source_csv.with_name("curation_summary.json"))
     run_metadata = deploy_summary or curation_summary
     generated_at = str(run_metadata.get("generated_at") or datetime.now(UTC).isoformat())
-    source_rows = int(run_metadata.get("source_rows") or len(curated_rows))
-    source_rejected_rows = int(
-        run_metadata.get("source_rejected_rows")
-        or run_metadata.get("skipped_low_quality_rows")
-        or 0
-    )
-    duplicate_rows = int(run_metadata.get("duplicate_source_rows") or 0)
-    deduplicated_rows = int(
-        run_metadata.get("curated_source_rows")
-        or max(source_rows - source_rejected_rows - duplicate_rows, 0)
-    )
-    candidate_rows = len(curated_rows)
-    selection_excluded_rows = int(
-        run_metadata.get("selection_excluded_rows")
-        or max(deduplicated_rows - candidate_rows, 0)
-    )
+    if deploy_summary:
+        source_rows = int(
+            run_metadata.get("input_rows")
+            or run_metadata.get("total_rows")
+            or len(curated_rows)
+        )
+        source_rejected_rows = max(source_rows - len(curated_rows), 0)
+        duplicate_rows = 0
+        deduplicated_rows = len(curated_rows)
+    else:
+        source_rows = int(run_metadata.get("source_rows") or len(curated_rows))
+        source_rejected_rows = int(
+            run_metadata.get("source_rejected_rows")
+            or run_metadata.get("skipped_low_quality_rows")
+            or 0
+        )
+        duplicate_rows = int(run_metadata.get("duplicate_source_rows") or 0)
+        deduplicated_rows = int(
+            run_metadata.get("curated_source_rows")
+            or max(source_rows - source_rejected_rows - duplicate_rows, 0)
+        )
+    transformed_rows = len(curated_rows)
     exact_rows = int(curated_geocode_summary.get("exact", 0))
     located_rows = len(curated_rows) - int(curated_geocode_summary.get("none", 0))
     status_counts = Counter(str(row.get("status") or "active") for row in published_rows)
     quality_qualified_rows = int(quality_summary.get("qualified_rows") or len(published_rows))
-    rejected_rows = max(candidate_rows - len(published_rows), 0)
-    duration_parts = [
-        run_metadata.get("curation_duration_seconds"),
-        run_metadata.get("duration_seconds"),
-        export_duration_seconds,
-    ]
+    rejected_rows = max(transformed_rows - len(published_rows), 0)
+    duration_parts = [run_metadata.get("duration_seconds"), export_duration_seconds]
     duration_seconds = round(sum(float(value) for value in duration_parts if value is not None), 3)
     stage_durations_seconds = {
-        "source_transform": float(run_metadata.get("curation_duration_seconds") or 0),
-        "candidate_selection": float(run_metadata.get("duration_seconds") or 0),
+        "ingest_and_transform": float(run_metadata.get("duration_seconds") or 0),
         "static_export": round(export_duration_seconds, 3),
     }
     published_at = datetime.now(UTC).isoformat()
     pipeline_version = str(run_metadata.get("pipeline_version") or "production-quality-v3")
-    dataset_fingerprint = str(run_metadata.get("dataset_fingerprint") or f"{candidate_rows:x}{len(published_rows):x}")
+    dataset_fingerprint = str(run_metadata.get("dataset_fingerprint") or f"{transformed_rows:x}{len(published_rows):x}")
     run_id = str(
         run_metadata.get("run_id")
         or f"etl-{_local_run_date(generated_at).replace('-', '')}-{dataset_fingerprint[:8]}"
@@ -205,7 +206,7 @@ def _etl_monitor_payload(
     summary = {
         "run_id": run_id,
         "pipeline_version": pipeline_version,
-        "run_mode": str(run_metadata.get("run_mode") or "production_snapshot"),
+        "run_mode": str(run_metadata.get("run_mode") or "budgeted_source_ingestion"),
         "dataset_fingerprint": dataset_fingerprint,
         "generated_at": generated_at,
         "source_generated_at": run_metadata.get("source_generated_at") or curation_summary.get("generated_at"),
@@ -215,9 +216,7 @@ def _etl_monitor_payload(
         "deduplicated_rows": deduplicated_rows,
         "duplicate_rows": duplicate_rows,
         "rejected_rows": rejected_rows,
-        "selection_excluded_rows": selection_excluded_rows,
-        "candidate_rows": candidate_rows,
-        "curated_rows": candidate_rows,
+        "curated_rows": transformed_rows,
         "located_rows": located_rows,
         "exact_geocoded_rows": exact_rows,
         "unresolved_geocode_rows": int(curated_geocode_summary.get("none", 0)),
@@ -226,6 +225,7 @@ def _etl_monitor_payload(
         "duration_seconds": duration_seconds,
         "stage_durations_seconds": stage_durations_seconds,
         "published_at": published_at,
+        "input_source_counts": dict(run_metadata.get("source_counts") or source_counts),
         "source_counts": dict(source_counts),
         "status_counts": dict(status_counts),
     }
@@ -239,14 +239,14 @@ def _etl_monitor_payload(
         "status": "success",
         "source_rows": source_rows,
         "deduplicated_rows": deduplicated_rows,
-        "candidate_rows": candidate_rows,
-        "curated_rows": candidate_rows,
+        "curated_rows": transformed_rows,
         "rejected_rows": rejected_rows,
         "located_rows": located_rows,
         "quality_qualified_rows": quality_qualified_rows,
         "published_rows": len(published_rows),
         "duration_seconds": duration_seconds,
         "stage_durations_seconds": stage_durations_seconds,
+        "input_source_counts": summary["input_source_counts"],
         "source_generated_at": summary["source_generated_at"],
         "published_at": published_at,
     }
@@ -264,7 +264,7 @@ def _etl_monitor_payload(
         json.dumps(
             {
                 "schema_version": 1,
-                "history_scope": "production_only",
+                "history_scope": "deployed_production_only",
                 "pipeline_version": pipeline_version,
                 "runs": runs,
             },

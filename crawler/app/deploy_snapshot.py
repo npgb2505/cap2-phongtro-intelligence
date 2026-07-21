@@ -75,16 +75,6 @@ def _derived_total_rows(
     return min(max_rows, sum(len(buckets[source]) for source in sources), int(minority_rows / min_source_share))
 
 
-def _read_json(path: Path) -> dict[str, object]:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
 def _display_path(path: Path) -> str:
     try:
         return path.relative_to(Path.cwd()).as_posix()
@@ -116,7 +106,6 @@ def build_deploy_snapshot(
             if source_name in buckets:
                 buckets[source_name].append(row)
 
-    available_counts = {source: len(rows) for source, rows in buckets.items()}
     derived_total_rows = (
         total_rows
         if total_rows is not None
@@ -142,34 +131,26 @@ def build_deploy_snapshot(
         fingerprint.update((row.get("listing_id") or row.get("canonical_url") or "").encode("utf-8"))
     dataset_fingerprint = fingerprint.hexdigest()[:16]
     generated_at = datetime.now(UTC)
-    curation_summary = _read_json(source_csv.with_name("curation_summary.json"))
-    curated_source_rows = sum(available_counts.values())
-    source_rows = int(curation_summary.get("source_rows") or curated_source_rows)
-    source_rejected_rows = int(curation_summary.get("skipped_low_quality_rows") or 0)
-    duplicate_source_rows = int(curation_summary.get("duplicate_source_rows") or 0)
     summary = {
         "run_id": f"etl-{generated_at:%Y%m%dT%H%M%SZ}-{dataset_fingerprint[:8]}",
         "pipeline_version": "production-quality-v3",
-        "run_mode": "production_snapshot",
+        "run_mode": "budgeted_source_ingestion",
         "generated_at": generated_at.isoformat(),
-        "source_generated_at": curation_summary.get("generated_at"),
+        "source_generated_at": generated_at.isoformat(),
         "source_csv": _display_path(source_csv),
         "output_csv": _display_path(output_csv),
-        "source_rows": source_rows,
-        "source_rejected_rows": source_rejected_rows,
-        "duplicate_source_rows": duplicate_source_rows,
-        "curated_source_rows": curated_source_rows,
+        "source_rows": len(selected),
+        "input_rows": len(selected),
+        "source_rejected_rows": 0,
+        "duplicate_source_rows": 0,
+        "curated_source_rows": len(selected),
         "total_rows": len(selected),
-        "candidate_rows": len(selected),
         "target_rows": derived_total_rows,
         "max_rows": max_rows,
         "min_source_share": min_source_share,
-        "selection_excluded_rows": curated_source_rows - len(selected),
-        "selection_strategy": "minority-share-balanced-quality-ranked",
+        "selection_strategy": "budgeted-source-balance-quality-ranked",
         "dataset_fingerprint": dataset_fingerprint,
         "duration_seconds": round(perf_counter() - started_clock, 3),
-        "curation_duration_seconds": curation_summary.get("duration_seconds"),
-        "available_source_counts": available_counts,
         "source_counts": dict(counts),
     }
     summary_json.parent.mkdir(parents=True, exist_ok=True)

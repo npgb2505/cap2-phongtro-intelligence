@@ -53,10 +53,11 @@ class DeploySnapshotTests(unittest.TestCase):
 
             self.assertEqual(summary["total_rows"], 6)
             self.assertEqual(summary["source_counts"], {"phongtro123": 3, "nhatot": 1, "mogi": 2})
-            self.assertEqual(summary["selection_strategy"], "minority-share-balanced-quality-ranked")
+            self.assertEqual(summary["selection_strategy"], "budgeted-source-balance-quality-ranked")
+            self.assertEqual(summary["run_mode"], "budgeted_source_ingestion")
             self.assertEqual(json.loads(summary_json.read_text(encoding="utf-8"))["target_rows"], 6)
 
-    def test_derives_non_round_candidate_count_from_smallest_source(self) -> None:
+    def test_derives_non_round_production_input_from_smallest_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source_csv = root / "curated.csv"
@@ -79,7 +80,8 @@ class DeploySnapshotTests(unittest.TestCase):
                 min_source_share=0.25,
             )
 
-            self.assertEqual(summary["candidate_rows"], 12)
+            self.assertEqual(summary["input_rows"], 12)
+            self.assertEqual(summary["source_rows"], 12)
             self.assertEqual(summary["source_counts"], {"phongtro123": 5, "nhatot": 3, "mogi": 4})
             self.assertEqual(summary["min_source_share"], 0.25)
 

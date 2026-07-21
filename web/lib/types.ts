@@ -107,8 +107,6 @@ export type EtlSummary = {
   deduplicated_rows: number;
   duplicate_rows: number;
   rejected_rows: number;
-  selection_excluded_rows?: number;
-  candidate_rows?: number;
   curated_rows: number;
   located_rows: number;
   exact_geocoded_rows: number;
@@ -118,6 +116,7 @@ export type EtlSummary = {
   duration_seconds?: number | null;
   stage_durations_seconds?: Record<string, number>;
   published_at?: string;
+  input_source_counts?: Record<string, number>;
   source_counts: Record<string, number>;
   status_counts: Record<string, number>;
 };
@@ -132,7 +131,6 @@ export type EtlRun = {
   status: "success" | "running" | "failed";
   source_rows: number;
   deduplicated_rows?: number;
-  candidate_rows?: number;
   curated_rows: number;
   rejected_rows: number;
   located_rows: number;
@@ -140,6 +138,7 @@ export type EtlRun = {
   published_rows: number;
   duration_seconds?: number | null;
   stage_durations_seconds?: Record<string, number>;
+  input_source_counts?: Record<string, number>;
   source_generated_at?: string | null;
   published_at?: string;
 };

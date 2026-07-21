@@ -109,8 +109,6 @@ function fallbackSummary(data: ListingMapResponse): EtlSummary {
     deduplicated_rows: data.total,
     duplicate_rows: 0,
     rejected_rows: data.skipped_rows ?? 0,
-    selection_excluded_rows: 0,
-    candidate_rows: data.total,
     curated_rows: data.total,
     located_rows: Math.max(data.total - noneRows, 0),
     exact_geocoded_rows: data.geocode_summary.exact ?? 0,
@@ -140,7 +138,6 @@ function fallbackRuns(summary: EtlSummary): EtlRun[] {
     status: summary.status,
     source_rows: summary.source_rows,
     deduplicated_rows: summary.deduplicated_rows,
-    candidate_rows: summary.candidate_rows ?? summary.curated_rows,
     curated_rows: summary.curated_rows,
     rejected_rows: summary.duplicate_rows + summary.rejected_rows,
     located_rows: summary.located_rows,
@@ -154,20 +151,18 @@ export function EtlMonitor({ data }: Props) {
   const summary = data.etl_summary ?? fallbackSummary(data);
   const runs = data.etl_runs?.length ? data.etl_runs : fallbackRuns(summary);
   const sourceEntries = Object.entries(summary.source_counts).sort((a, b) => b[1] - a[1]);
+  const inputSourceEntries = Object.entries(summary.input_source_counts ?? summary.source_counts).sort((a, b) => b[1] - a[1]);
   const largestSource = sourceEntries[0]?.[1] ?? 1;
   const qualitySummary = data.quality_summary;
-  const candidateRows = summary.candidate_rows ?? summary.curated_rows;
   const sourceRejected = summary.source_rejected_rows ?? Math.max(summary.source_rows - summary.duplicate_rows - summary.deduplicated_rows, 0);
-  const selectionExcluded = summary.selection_excluded_rows ?? Math.max(summary.deduplicated_rows - candidateRows, 0);
-  const qualityQualified = summary.quality_qualified_rows ?? qualitySummary?.qualified_rows ?? candidateRows;
-  const qualityInput = qualitySummary?.valid_source_rows ?? candidateRows;
+  const qualityQualified = summary.quality_qualified_rows ?? qualitySummary?.qualified_rows ?? summary.curated_rows;
+  const qualityInput = qualitySummary?.valid_source_rows ?? summary.curated_rows;
   const coreRejected = qualitySummary?.rejected_core_quality_rows ?? qualitySummary?.rejected_low_quality_rows ?? 0;
   const scoreRejected = qualitySummary?.rejected_score_rows ?? 0;
-  const totalRemoved = Math.max(candidateRows - summary.published_rows, 0);
+  const totalRemoved = Math.max(summary.source_rows - summary.published_rows, 0);
   const qualityRate = percent(qualityQualified, qualityInput);
   const runChart = runs.map((run) => ({
     ...run,
-    candidate_rows: run.candidate_rows ?? run.curated_rows,
     quality_qualified_rows: run.quality_qualified_rows ?? run.published_rows,
     label: formatRunDate(run.date)
   }));
@@ -181,15 +176,15 @@ export function EtlMonitor({ data }: Props) {
   const layers = [
     {
       order: "01",
-      title: "Thu nhận đa nguồn",
-      description: "Crawler hợp nhất dữ liệu thô từ các cổng phòng trọ.",
+      title: "Thu nhận có giới hạn",
+      description: "Mỗi lần chạy production lấy lượng dữ liệu đã định từ ba nguồn phòng trọ.",
       icon: Database,
       value: summary.source_rows,
       label: "dòng đầu vào",
       ratio: 100,
       facts: [
-        `${sourceEntries.length} nguồn được thu nhận`,
-        summary.source_generated_at ? `Nguồn chuẩn hóa ${formatRunTime(summary.source_generated_at)}` : "Schema nguồn được lưu vết"
+        `${inputSourceEntries.length} nguồn được thu nhận`,
+        inputSourceEntries.map(([source, value]) => `${SOURCE_LABELS[source] ?? source} ${value.toLocaleString("vi-VN")}`).join(" · ")
       ]
     },
     {
@@ -204,22 +199,22 @@ export function EtlMonitor({ data }: Props) {
     },
     {
       order: "03",
-      title: "Cân bằng tập ứng viên",
-      description: "Suy ra quy mô từ nguồn nhỏ nhất rồi xếp hạng chất lượng trong từng nguồn.",
+      title: "Biến đổi và chuẩn hóa",
+      description: "Chuẩn hóa giá, diện tích, địa chỉ, trạng thái và thông tin liên hệ về cùng schema.",
       icon: Layers3,
-      value: candidateRows,
-      label: "ứng viên cân bằng",
-      ratio: percent(candidateRows, summary.deduplicated_rows),
-      facts: [`${selectionExcluded.toLocaleString("vi-VN")} dòng ngoài tập ứng viên`, "Nguồn nhỏ nhất chiếm tối thiểu 24%"]
+      value: summary.curated_rows,
+      label: "bản ghi đã chuẩn hóa",
+      ratio: percent(summary.curated_rows, summary.deduplicated_rows),
+      facts: ["Giá và diện tích về kiểu số", "Địa chỉ và liên hệ về schema chung"]
     },
     {
       order: "04",
       title: "Chuẩn hóa và geocode",
-      description: "Chuẩn hóa giá, diện tích, liên hệ và xác định mức chính xác vị trí.",
+      description: "Phân loại độ chính xác địa chỉ và gắn tọa độ phù hợp cho từng bản ghi.",
       icon: ScanSearch,
       value: summary.located_rows,
       label: "bản ghi có mức vị trí",
-      ratio: percent(summary.located_rows, candidateRows),
+      ratio: percent(summary.located_rows, summary.curated_rows),
       facts: [`${summary.exact_geocoded_rows.toLocaleString("vi-VN")} địa chỉ chính xác`, `${summary.unresolved_geocode_rows.toLocaleString("vi-VN")} chưa định vị`]
     },
     {
@@ -229,7 +224,7 @@ export function EtlMonitor({ data }: Props) {
       icon: ShieldCheck,
       value: qualityQualified,
       label: "bản ghi qua quality gate",
-      ratio: percent(qualityQualified, candidateRows),
+      ratio: percent(qualityQualified, summary.curated_rows),
       facts: [`${coreRejected.toLocaleString("vi-VN")} thiếu trường cốt lõi`, `${scoreRejected.toLocaleString("vi-VN")} điểm dưới ${qualitySummary?.minimum_score ?? 0}`]
     },
     {
@@ -264,7 +259,7 @@ export function EtlMonitor({ data }: Props) {
       </header>
 
       <div className="etl-health-strip" aria-label="Sức khỏe pipeline">
-        <div><Activity size={17} strokeWidth={1.9} aria-hidden /><span>Ứng viên được xuất bản</span><strong>{formatPercent(percent(summary.published_rows, candidateRows))}</strong></div>
+        <div><Activity size={17} strokeWidth={1.9} aria-hidden /><span>Đầu vào được xuất bản</span><strong>{formatPercent(percent(summary.published_rows, summary.source_rows))}</strong></div>
         <div><ShieldCheck size={17} strokeWidth={1.9} aria-hidden /><span>Đạt kiểm tra chất lượng</span><strong>{formatPercent(qualityRate)}</strong></div>
         <div><Server size={17} strokeWidth={1.9} aria-hidden /><span>Đã xuất bản</span><strong>{summary.published_rows.toLocaleString("vi-VN")}</strong></div>
         <div><CalendarClock size={17} strokeWidth={1.9} aria-hidden /><span>Phiên bản pipeline</span><strong>{summary.pipeline_version ?? "Chưa xác định"}</strong></div>
@@ -276,7 +271,7 @@ export function EtlMonitor({ data }: Props) {
             <h3 id="etl-pipeline-title">Data spine</h3>
             <p>Mỗi lớp chỉ chuyển tiếp dữ liệu đã vượt qua checkpoint trước đó.</p>
           </div>
-          <span>{totalRemoved.toLocaleString("vi-VN")} ứng viên không qua quality gate</span>
+          <span>{totalRemoved.toLocaleString("vi-VN")} bản ghi không qua quality gate</span>
         </div>
         <div className="etl-layer-stack">
           {layers.map((layer) => {
@@ -309,7 +304,7 @@ export function EtlMonitor({ data }: Props) {
       <div className="etl-monitor-grid">
         <article className="etl-monitor-panel etl-trend-panel">
           <div className="etl-panel-heading">
-            <div><h3>Lịch sử chạy production</h3><p>Đầu vào thô, tập ứng viên, số qua gate và số được xuất bản.</p></div>
+            <div><h3>Lịch sử chạy production</h3><p>Đầu vào, số đã chuẩn hóa, số qua gate và số được xuất bản.</p></div>
             <span>{runs.length}/30 lần chạy</span>
           </div>
           <div className="etl-chart etl-chart-wide">
@@ -321,13 +316,13 @@ export function EtlMonitor({ data }: Props) {
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: 11, color: "#607089" }} />
                 <Area type="monotone" dataKey="source_rows" name="Đầu vào" stroke="#7ba9dc" fill="#cfe3f8" fillOpacity={0.34} strokeWidth={2} />
-                <Area type="monotone" dataKey="candidate_rows" name="Ứng viên" stroke="#176bda" fill="#82b9f4" fillOpacity={0.28} strokeWidth={2.5} />
+                <Area type="monotone" dataKey="curated_rows" name="Chuẩn hóa" stroke="#176bda" fill="#82b9f4" fillOpacity={0.28} strokeWidth={2.5} />
                 <Area type="monotone" dataKey="quality_qualified_rows" name="Qua gate" stroke="#5474c8" fill="#aebff0" fillOpacity={0.2} strokeWidth={2} />
                 <Area type="monotone" dataKey="published_rows" name="Xuất bản" stroke="#0e7490" fill="#67c7d8" fillOpacity={0.16} strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          <p className="etl-history-note">Ledger chỉ nhận run production có mã chạy và fingerprint; các lần export thử nghiệm cũ không được nhập vào lịch sử này.</p>
+          <p className="etl-history-note">Lịch sử chỉ ghi lần chạy production có mã chạy và fingerprint; các lần export thử nghiệm không được nhập vào đây.</p>
         </article>
 
         <article className="etl-monitor-panel">
@@ -369,7 +364,7 @@ export function EtlMonitor({ data }: Props) {
           </div>
           <div className="etl-run-table" role="table" aria-label="Lịch sử chạy ETL">
             <div className="etl-run-row etl-run-head" role="row">
-              <span>Thời điểm</span><span>Mã chạy</span><span>Đầu vào</span><span>Ứng viên</span><span>Qua gate</span><span>Xuất bản</span><span>Thời lượng</span>
+              <span>Thời điểm</span><span>Mã chạy</span><span>Đầu vào</span><span>Chuẩn hóa</span><span>Qua gate</span><span>Xuất bản</span><span>Thời lượng</span>
             </div>
             {[...runs].reverse().map((run) => (
               <div className="etl-run-row" role="row" key={run.run_id ?? `${run.date}-${run.generated_at}`}>
@@ -382,7 +377,7 @@ export function EtlMonitor({ data }: Props) {
                   <small>{run.pipeline_version ?? "Không rõ phiên bản"}</small>
                 </div>
                 <span>{run.source_rows.toLocaleString("vi-VN")}</span>
-                <span>{(run.candidate_rows ?? run.curated_rows).toLocaleString("vi-VN")}</span>
+                <span>{run.curated_rows.toLocaleString("vi-VN")}</span>
                 <span>{(run.quality_qualified_rows ?? run.published_rows).toLocaleString("vi-VN")}</span>
                 <span>{run.published_rows.toLocaleString("vi-VN")}</span>
                 <span>{formatDuration(run.duration_seconds)}</span>

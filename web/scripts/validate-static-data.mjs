@@ -32,17 +32,17 @@ if (!manifest.quality_summary?.enabled) {
 if (Number(manifest.quality_summary.published_rows) !== Number(manifest.total)) {
   throw new Error("Quality summary published count does not match static manifest total");
 }
-const candidateRows = Number(manifest.quality_summary.input_rows);
-const removedCandidateRows = candidateRows - Number(manifest.total);
+const inputRows = Number(manifest.quality_summary.input_rows);
+const removedInputRows = inputRows - Number(manifest.total);
 const minimumQualityScore = Number(manifest.quality_summary.minimum_score);
-if (candidateRows < 55_000 || candidateRows > 60_000) {
-  throw new Error(`Balanced candidate pool is outside the expected data-derived range: ${candidateRows}`);
+if (inputRows < 55_000 || inputRows > 60_000) {
+  throw new Error(`Production input is outside the expected data-derived range: ${inputRows}`);
 }
-if (candidateRows % 1_000 === 0 || Number(manifest.total) % 1_000 === 0) {
-  throw new Error("Candidate and publication counts must be produced by data rules, not round presentation quotas");
+if (inputRows % 1_000 === 0 || Number(manifest.total) % 1_000 === 0) {
+  throw new Error("Input and publication counts must be produced by data rules, not round presentation quotas");
 }
-if (removedCandidateRows < 4_000 || removedCandidateRows > 7_000) {
-  throw new Error(`Quality gate removed an unexpected number of candidates: ${removedCandidateRows}`);
+if (removedInputRows < 4_000 || removedInputRows > 7_000) {
+  throw new Error(`Quality gate removed an unexpected number of input rows: ${removedInputRows}`);
 }
 if (minimumQualityScore !== 68) {
   throw new Error(`Unexpected publication quality threshold: ${minimumQualityScore}`);
@@ -56,10 +56,10 @@ if (!manifest.etl_summary || !Array.isArray(manifest.etl_runs) || manifest.etl_r
 if (Number(manifest.etl_summary.published_rows) !== Number(manifest.total)) {
   throw new Error("ETL published row count does not match static manifest total");
 }
-if (Number(manifest.etl_summary.candidate_rows) !== candidateRows || Number(manifest.etl_summary.quality_qualified_rows) !== Number(manifest.total)) {
+if (Number(manifest.etl_summary.source_rows) !== inputRows || Number(manifest.etl_summary.curated_rows) !== inputRows || Number(manifest.etl_summary.quality_qualified_rows) !== Number(manifest.total)) {
   throw new Error("ETL layer counts do not match the quality summary");
 }
-if (Number(manifest.etl_summary.source_rows) < Number(manifest.etl_summary.deduplicated_rows) || Number(manifest.etl_summary.deduplicated_rows) < candidateRows) {
+if (Number(manifest.etl_summary.source_rows) < Number(manifest.etl_summary.deduplicated_rows) || Number(manifest.etl_summary.deduplicated_rows) < Number(manifest.etl_summary.curated_rows) || Number(manifest.etl_summary.curated_rows) < Number(manifest.etl_summary.quality_qualified_rows)) {
   throw new Error("ETL layer counts are not monotonically decreasing");
 }
 if (!manifest.etl_summary.run_id || !manifest.etl_summary.dataset_fingerprint || manifest.etl_summary.pipeline_version !== "production-quality-v3") {
@@ -179,8 +179,8 @@ console.log(JSON.stringify({
   noImageRows,
   contactRows,
   sourceRows: Object.fromEntries(sourceRows),
-  candidateRows,
-  removedCandidateRows,
+  inputRows,
+  removedInputRows,
   minimumQualityScore,
   runId: manifest.etl_summary.run_id,
   rejectedLowQuality: manifest.quality_summary.rejected_low_quality_rows,

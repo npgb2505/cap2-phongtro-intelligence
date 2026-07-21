@@ -11,6 +11,56 @@ from app.static_snapshot_to_csv import static_snapshot_to_csv
 
 
 class StaticMapExportTests(unittest.TestCase):
+    def test_deploy_history_starts_at_budgeted_production_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "deploy" / "listings_deploy.csv"
+            output = root / "data" / "listings-map.json"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            rows = [
+                {
+                    "listing_id": f"listing-{index}",
+                    "source_name": "mogi",
+                    "title_clean": f"Phòng số {index}",
+                    "canonical_url": f"https://example.com/{index}",
+                    "province": "Hà Nội",
+                    "status": "active",
+                }
+                for index in range(3)
+            ]
+            with source.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            source.with_name("deploy_snapshot_summary.json").write_text(json.dumps({
+                "run_id": "etl-20260721T120000Z-abcdef12",
+                "pipeline_version": "production-quality-v3",
+                "run_mode": "budgeted_source_ingestion",
+                "generated_at": "2026-07-21T12:00:00+00:00",
+                "input_rows": 3,
+                "source_rows": 3,
+                "total_rows": 3,
+                "curated_source_rows": 3,
+                "dataset_fingerprint": "abcdef1234567890",
+                "duration_seconds": 1.25,
+                "source_counts": {"mogi": 3},
+                "source_inventory": {"available_rows": 117_395},
+            }), encoding="utf-8")
+
+            manifest = export_static_map(
+                source_csv=source,
+                output_json=output,
+                chunk_size=2,
+                detail_chunk_size=1,
+            )
+
+            self.assertEqual(manifest["etl_summary"]["source_rows"], 3)
+            self.assertEqual(manifest["etl_summary"]["curated_rows"], 3)
+            self.assertEqual(manifest["etl_summary"]["input_source_counts"], {"mogi": 3})
+            self.assertNotIn("candidate_rows", manifest["etl_summary"])
+            self.assertNotIn("source_inventory", manifest["etl_summary"])
+            self.assertEqual(manifest["etl_runs"][0]["source_rows"], 3)
+
     def test_splits_lightweight_index_from_lazy_details(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -62,13 +112,14 @@ class StaticMapExportTests(unittest.TestCase):
             self.assertEqual(len(manifest["chunks"]), 2)
             self.assertEqual(manifest["etl_summary"]["source_rows"], 5)
             self.assertEqual(manifest["etl_summary"]["deduplicated_rows"], 3)
-            self.assertEqual(manifest["etl_summary"]["candidate_rows"], 3)
+            self.assertEqual(manifest["etl_summary"]["curated_rows"], 3)
+            self.assertNotIn("candidate_rows", manifest["etl_summary"])
             self.assertEqual(manifest["etl_summary"]["published_rows"], 3)
             self.assertEqual(manifest["etl_runs"][0]["date"], "2026-07-15")
             self.assertTrue(manifest["etl_runs"][0]["run_id"].startswith("etl-20260715-"))
             self.assertNotEqual(manifest["etl_runs"][0]["run_id"], "experimental-export")
             history = json.loads((source.parent / "etl_run_history.json").read_text(encoding="utf-8"))
-            self.assertEqual(history["history_scope"], "production_only")
+            self.assertEqual(history["history_scope"], "deployed_production_only")
             self.assertEqual(len(history["runs"]), 1)
             index_payload = json.loads((output.parent / manifest["chunks"][0]).read_text(encoding="utf-8"))
             first = index_payload["items"][0]
