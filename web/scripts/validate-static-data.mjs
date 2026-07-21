@@ -20,8 +20,17 @@ const canonicalProvinces = new Set([
 if (!Array.isArray(manifest.chunks) || manifest.chunks.length === 0) {
   throw new Error("Static manifest has no index chunks");
 }
-if (Number(manifest.total) < 50_000) {
+if (Number(manifest.total) < 10_000) {
   throw new Error(`Static manifest only contains ${manifest.total} rows`);
+}
+if (Number(manifest.total) > 20_000) {
+  throw new Error(`Static manifest exceeds the 20,000-row public quality cap: ${manifest.total}`);
+}
+if (!manifest.quality_summary?.enabled) {
+  throw new Error("Static manifest quality gate is not enabled");
+}
+if (Number(manifest.quality_summary.published_rows) !== Number(manifest.total)) {
+  throw new Error("Quality summary published count does not match static manifest total");
 }
 if (!manifest.etl_summary || !Array.isArray(manifest.etl_runs) || manifest.etl_runs.length === 0) {
   throw new Error("Static manifest has no ETL monitoring metadata");
@@ -51,6 +60,24 @@ for (const chunkPath of manifest.chunks) {
     }
     if (!item.detail_path) {
       throw new Error(`Listing ${item.id} has no lazy detail path`);
+    }
+    if (!/^https?:\/\//i.test(item.thumbnail_url ?? "") || /(?:thumb_default|no[-_]image|placeholder|default[-_]image)/i.test(item.thumbnail_url)) {
+      throw new Error(`Listing ${item.id} has no real public image`);
+    }
+    if (!item.has_direct_contact && !item.has_contact_name) {
+      throw new Error(`Listing ${item.id} has no usable contact`);
+    }
+    if (Number(item.publication_quality_score) < 70) {
+      throw new Error(`Listing ${item.id} has a low publication quality score`);
+    }
+    if (Number(item.price_value) < 300_000 || Number(item.price_value) > 30_000_000) {
+      throw new Error(`Listing ${item.id} has an invalid public price`);
+    }
+    if (Number(item.area_m2) < 6 || Number(item.area_m2) > 300) {
+      throw new Error(`Listing ${item.id} has an invalid public area`);
+    }
+    if (!item.province || !item.district || (!item.street_address && !item.full_address)) {
+      throw new Error(`Listing ${item.id} has an incomplete public address`);
     }
     detailPaths.add(item.detail_path);
   }
@@ -82,6 +109,12 @@ for (const detailPath of detailPaths) {
     if (Object.hasOwn(item, "content_hash")) {
       throw new Error(`Public detail exposes content_hash for ${item.id}`);
     }
+    if (String(item.description_clean ?? "").trim().length < 80) {
+      throw new Error(`Public detail has an incomplete description for ${item.id}`);
+    }
+    if (!/^https?:\/\//i.test(item.canonical_url ?? "")) {
+      throw new Error(`Public detail has no canonical URL for ${item.id}`);
+    }
   }
 }
 
@@ -96,5 +129,7 @@ console.log(JSON.stringify({
   indexChunks: manifest.chunks.length,
   detailChunks: detailPaths.size,
   provinces: manifest.available_provinces?.length ?? 0,
-  etlRuns: manifest.etl_runs.length
+  etlRuns: manifest.etl_runs.length,
+  rejectedLowQuality: manifest.quality_summary.rejected_low_quality_rows,
+  trimmedRows: manifest.quality_summary.trimmed_rows
 }));

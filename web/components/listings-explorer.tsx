@@ -347,7 +347,32 @@ function furnishingLabel(value: string | null) {
 
 function imageUrl(item: Listing | null) {
   const candidate = item?.primary_image_url || item?.thumbnail_url || null;
-  return candidate && /^https?:\/\//i.test(candidate) ? candidate : null;
+  return candidate && /^https?:\/\//i.test(candidate) && !/(?:thumb_default|no[-_]image|placeholder|default[-_]image)/i.test(candidate)
+    ? candidate
+    : null;
+}
+
+function compareRecommendedListings(a: Listing, b: Listing) {
+  const activeDelta = Number(b.status === "active") - Number(a.status === "active");
+  if (activeDelta !== 0) {
+    return activeDelta;
+  }
+  const directContactDelta = Number(Boolean(b.has_direct_contact)) - Number(Boolean(a.has_direct_contact));
+  if (directContactDelta !== 0) {
+    return directContactDelta;
+  }
+  const qualityDelta = (b.publication_quality_score ?? 0) - (a.publication_quality_score ?? 0);
+  if (qualityDelta !== 0) {
+    return qualityDelta;
+  }
+  const contactNameDelta = Number(Boolean(b.has_contact_name)) - Number(Boolean(a.has_contact_name));
+  if (contactNameDelta !== 0) {
+    return contactNameDelta;
+  }
+  return (
+    (b.record_completeness_score ?? 0) - (a.record_completeness_score ?? 0) ||
+    (b.image_count ?? 0) - (a.image_count ?? 0)
+  );
 }
 
 function countBy(items: Listing[], getKey: (item: Listing) => string | null | undefined) {
@@ -539,7 +564,7 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
         if (sortBy === "area_desc") {
           return (b.area_m2 ?? 0) - (a.area_m2 ?? 0);
         }
-        return (b.record_completeness_score ?? 0) - (a.record_completeness_score ?? 0) || (b.image_count ?? 0) - (a.image_count ?? 0);
+        return compareRecommendedListings(a, b);
       });
   }, [
     hasImageOnly,

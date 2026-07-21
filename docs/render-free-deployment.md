@@ -15,10 +15,11 @@ Ban public khong can FastAPI hay Render Web Service. Next.js duoc export thanh H
 
 ## Du lieu duoc dua len
 
-- 117,320 tin trong snapshot da kiem tra.
-- 24 index chunks de tai danh sach va ban do.
-- 235 detail chunks chi tai khi nguoi dung mo chi tiet.
-- 3 nguon san xuat: Phongtro123, NhaTot va Mogi.
+- 20,000 tin tot nhat trong snapshot da qua quality gate.
+- 4 index chunks de tai danh sach va ban do.
+- 40 detail chunks chi tai khi nguoi dung mo chi tiet.
+- 2 nguon du thong tin de xuat ban: Phongtro123 va NhaTot.
+- Moi tin bat buoc co anh that, lien he, gia, dien tich, dia chi, mo ta va link goc.
 - Dashboard phan tich va dashboard tien trinh ETL dung chung snapshot.
 
 ## Trien khai bang Blueprint
@@ -42,7 +43,7 @@ staticPublishPath: ./web/out
 
 Mo URL `https://<ten-site>.onrender.com` va xac nhan:
 
-1. Tong snapshot hien 117,320 tin.
+1. Tong snapshot hien 20,000 tin.
 2. Bo loc tinh thanh bat buoc truoc khi chon quan huyen.
 3. Tim duong chi loc sau khi nguoi dung ngung go.
 4. Ban do hien marker khi di chuyen den TP.HCM, Da Nang va Ha Noi.
@@ -57,7 +58,7 @@ Static Site tu deploy lai sau moi commit vao `main`. De dua snapshot moi len:
 
 ```powershell
 cd D:\UNIVERSITY\Cap2
-.\crawler\scripts\balanced_backfill.ps1
+.\crawler\scripts\export_static_map.ps1
 git add web\public\data
 git commit -m "Refresh rental listing snapshot"
 git push origin main

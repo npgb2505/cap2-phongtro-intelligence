@@ -8,6 +8,12 @@ from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from app.deploy_snapshot import DEFAULT_SOURCES, build_deploy_snapshot
+from app.publication_quality import (
+    PublicationAssessment,
+    evaluate_publication_quality,
+    is_contact_name,
+    publication_sort_key,
+)
 
 KNOWN_SOURCES = {"phongtro123", "nhatot", "mogi"}
 VIETNAM_TIMEZONE = timezone(timedelta(hours=7))
@@ -53,7 +59,7 @@ def _detail_columns(row: dict[str, str]) -> dict[str, object]:
         "posted_at": _string(row.get("posted_at")),
         "expired_at": _string(row.get("expired_at")),
         "freshness_days": _int(row.get("freshness_days")),
-        "contact_name": _string(row.get("contact_name")),
+        "contact_name": _string(row.get("contact_name")) if is_contact_name(row.get("contact_name")) else None,
         "contact_phone": _string(row.get("contact_phone")),
         "contact_zalo_url": _string(row.get("contact_zalo_url")),
         "contact_facebook_url": _string(row.get("contact_facebook_url")),
@@ -65,7 +71,11 @@ def _detail_columns(row: dict[str, str]) -> dict[str, object]:
     return {key: value for key, value in detail.items() if value not in {None, ""}}
 
 
-def _row_to_listing(row: dict[str, str], detail_path: str | None = None) -> dict[str, object]:
+def _row_to_listing(
+    row: dict[str, str],
+    detail_path: str | None = None,
+    assessment: PublicationAssessment | None = None,
+) -> dict[str, object]:
     primary_image_url = _string(row.get("primary_image_url"))
     listing = {
         "id": row.get("listing_id") or "",
@@ -84,6 +94,9 @@ def _row_to_listing(row: dict[str, str], detail_path: str | None = None) -> dict
         "room_type": _string(row.get("room_type")),
         "image_count": _int(row.get("image_count")) or 0,
         "record_completeness_score": _int(row.get("record_completeness_score")),
+        "publication_quality_score": assessment.score if assessment else None,
+        "has_direct_contact": assessment.has_direct_contact if assessment else None,
+        "has_contact_name": assessment.has_contact_name if assessment else None,
         "thumbnail_url": primary_image_url,
         "status": row.get("status") or "active",
     }
@@ -133,18 +146,23 @@ def _etl_monitor_payload(
     *,
     source_csv: Path,
     output_json: Path,
-    valid_rows: list[dict[str, str]],
+    curated_rows: list[dict[str, str]],
+    published_rows: list[dict[str, str]],
     source_counts: Counter[str],
-    geocode_summary: Counter[str],
+    curated_geocode_summary: Counter[str],
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     curation_summary = _read_json(source_csv.with_name("curation_summary.json"))
     generated_at = str(curation_summary.get("generated_at") or datetime.now(UTC).isoformat())
-    source_rows = int(curation_summary.get("source_rows") or len(valid_rows))
+    source_rows = int(curation_summary.get("source_rows") or len(curated_rows))
     duplicate_rows = int(curation_summary.get("duplicate_source_rows") or 0)
-    rejected_rows = int(curation_summary.get("skipped_low_quality_rows") or 0)
-    exact_rows = int(geocode_summary.get("exact", 0))
-    located_rows = len(valid_rows) - int(geocode_summary.get("none", 0))
-    status_counts = Counter(str(row.get("status") or "active") for row in valid_rows)
+    curation_rejected_rows = int(curation_summary.get("skipped_low_quality_rows") or 0)
+    exact_rows = int(curated_geocode_summary.get("exact", 0))
+    located_rows = len(curated_rows) - int(curated_geocode_summary.get("none", 0))
+    status_counts = Counter(str(row.get("status") or "active") for row in published_rows)
+    rejected_rows = max(
+        source_rows - len(published_rows) - duplicate_rows,
+        curation_rejected_rows,
+    )
     summary = {
         "generated_at": generated_at,
         "status": "success",
@@ -152,11 +170,11 @@ def _etl_monitor_payload(
         "deduplicated_rows": max(source_rows - duplicate_rows, 0),
         "duplicate_rows": duplicate_rows,
         "rejected_rows": rejected_rows,
-        "curated_rows": len(valid_rows),
+        "curated_rows": len(curated_rows),
         "located_rows": located_rows,
         "exact_geocoded_rows": exact_rows,
-        "unresolved_geocode_rows": int(geocode_summary.get("none", 0)),
-        "published_rows": len(valid_rows),
+        "unresolved_geocode_rows": int(curated_geocode_summary.get("none", 0)),
+        "published_rows": len(published_rows),
         "duration_seconds": curation_summary.get("duration_seconds"),
         "source_counts": dict(source_counts),
         "status_counts": dict(status_counts),
@@ -166,10 +184,10 @@ def _etl_monitor_payload(
         "generated_at": generated_at,
         "status": "success",
         "source_rows": source_rows,
-        "curated_rows": len(valid_rows),
+        "curated_rows": len(curated_rows),
         "rejected_rows": duplicate_rows + rejected_rows,
         "located_rows": located_rows,
-        "published_rows": len(valid_rows),
+        "published_rows": len(published_rows),
         "duration_seconds": curation_summary.get("duration_seconds"),
     }
     previous_manifest = _read_json(output_json)
@@ -189,12 +207,26 @@ def export_static_map(
     output_json: Path,
     chunk_size: int,
     detail_chunk_size: int = 500,
+    quality_only: bool = False,
+    max_rows: int | None = None,
 ) -> dict[str, object]:
     with source_csv.open("r", encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
 
-    skipped_rows = len([row for row in rows if not _valid_row(row)])
-    valid_rows = [row for row in rows if _valid_row(row)]
+    curated_rows = [row for row in rows if _valid_row(row)]
+    assessed_rows = [(row, evaluate_publication_quality(row)) for row in curated_rows]
+    qualified_rows = [
+        (row, assessment)
+        for row, assessment in assessed_rows
+        if not quality_only or assessment.publishable
+    ]
+    if quality_only:
+        qualified_rows.sort(
+            key=lambda entry: publication_sort_key(entry[0], entry[1]),
+            reverse=True,
+        )
+    published_rows = qualified_rows[:max_rows] if max_rows and max_rows > 0 else qualified_rows
+    skipped_rows = len(rows) - len(published_rows)
 
     detail_dir = output_json.parent / f"{output_json.stem}-details"
     detail_paths: list[str] = []
@@ -202,39 +234,68 @@ def export_static_map(
         detail_dir.mkdir(parents=True, exist_ok=True)
         for old_chunk in detail_dir.glob("*.json"):
             old_chunk.unlink()
-        for index in range(0, len(valid_rows), detail_chunk_size):
-            detail_chunk = valid_rows[index:index + detail_chunk_size]
+        for index in range(0, len(published_rows), detail_chunk_size):
+            detail_chunk = published_rows[index:index + detail_chunk_size]
             detail_name = f"part-{index // detail_chunk_size:03d}.json"
             detail_path = detail_dir / detail_name
             detail_path.write_text(
-                json.dumps({"items": [_row_to_detail(row) for row in detail_chunk]}, ensure_ascii=False, separators=(",", ":")),
+                json.dumps(
+                    {"items": [_row_to_detail(row) for row, _assessment in detail_chunk]},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
                 encoding="utf-8",
             )
             detail_paths.append(f"{detail_dir.name}/{detail_name}")
 
     items = []
-    for index, row in enumerate(valid_rows):
+    for index, (row, assessment) in enumerate(published_rows):
         detail_path = detail_paths[index // detail_chunk_size] if detail_paths else None
-        items.append(_row_to_listing(row, detail_path))
+        items.append(_row_to_listing(row, detail_path, assessment))
     source_counts = Counter(str(item["source_name"]) for item in items)
     geocode_summary = Counter(str(item.get("geocode_precision") or "none") for item in items)
+    curated_geocode_summary = Counter(str(row.get("geocode_precision") or "none") for row in curated_rows)
     available_provinces = sorted({str(item["province"]) for item in items if item.get("province")})
     etl_summary, etl_runs = _etl_monitor_payload(
         source_csv=source_csv,
         output_json=output_json,
-        valid_rows=valid_rows,
+        curated_rows=curated_rows,
+        published_rows=[row for row, _assessment in published_rows],
         source_counts=source_counts,
-        geocode_summary=geocode_summary,
+        curated_geocode_summary=curated_geocode_summary,
     )
+    qualified_source_counts = Counter(str(row.get("source_name") or "unknown") for row, _assessment in qualified_rows)
+    quality_summary = {
+        "enabled": quality_only,
+        "input_rows": len(rows),
+        "valid_source_rows": len(curated_rows),
+        "qualified_rows": len(qualified_rows),
+        "published_rows": len(published_rows),
+        "rejected_invalid_source_rows": len(rows) - len(curated_rows),
+        "rejected_low_quality_rows": len(curated_rows) - len(qualified_rows),
+        "trimmed_rows": len(qualified_rows) - len(published_rows),
+        "qualified_source_counts": dict(qualified_source_counts),
+        "published_source_counts": dict(source_counts),
+        "requirements": [
+            "real_image",
+            "contact",
+            "reasonable_price",
+            "valid_area",
+            "address",
+            "description",
+            "canonical_url",
+        ],
+    }
 
     output = {
         "total": len(items),
         "returned": len(items),
-        "dataset_version": str(etl_summary["generated_at"]),
+        "dataset_version": datetime.now(UTC).isoformat(),
         "available_provinces": available_provinces,
         "geocode_summary": dict(geocode_summary),
         "deploy_source_counts": dict(source_counts),
         "skipped_rows": skipped_rows,
+        "quality_summary": quality_summary,
         "etl_summary": etl_summary,
         "etl_runs": etl_runs,
         "detail_chunk_size": detail_chunk_size if detail_paths else None,
@@ -269,11 +330,17 @@ def export_static_map(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export deploy snapshot as frontend static map JSON.")
-    parser.add_argument("--source-csv", type=Path, default=Path("crawler/artifacts/deploy/listings_deploy.csv"))
+    parser.add_argument(
+        "--source-csv",
+        type=Path,
+        default=Path("crawler/artifacts/curated/toan-quoc/listings_curated.csv"),
+    )
     parser.add_argument("--output-json", type=Path, default=Path("web/public/data/listings-map.json"))
     parser.add_argument("--ensure-snapshot", action="store_true")
     parser.add_argument("--chunk-size", type=int, default=0)
     parser.add_argument("--detail-chunk-size", type=int, default=500)
+    parser.add_argument("--max-rows", type=int, default=20_000)
+    parser.add_argument("--include-low-quality", action="store_true")
     args = parser.parse_args()
 
     source_csv = args.source_csv.resolve()
@@ -291,6 +358,8 @@ def main() -> None:
         output_json=args.output_json.resolve(),
         chunk_size=args.chunk_size,
         detail_chunk_size=args.detail_chunk_size,
+        quality_only=not args.include_low_quality,
+        max_rows=args.max_rows,
     )
     print(
         json.dumps(
@@ -301,6 +370,7 @@ def main() -> None:
                 "deploy_source_counts": output["deploy_source_counts"],
                 "chunks": len(output.get("chunks", [])),
                 "skipped_rows": output.get("skipped_rows", 0),
+                "quality_summary": output.get("quality_summary", {}),
             },
             ensure_ascii=False,
             indent=2,

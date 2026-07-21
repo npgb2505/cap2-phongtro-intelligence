@@ -74,7 +74,7 @@ Che do nay:
 1. Doc `web/public/data/listings-map.json`.
 2. Ghep tat ca index chunks va detail chunks.
 3. Tao CSV day du trong runner.
-4. Kiem tra toi thieu 50.000 dong.
+4. Kiem tra toi thieu 10.000 dong sau quality gate.
 5. Chan province rac, Zalo hotline, ID trung va toa do lech cap.
 6. Upsert vao Supabase.
 7. Apply read-only views/RLS.
@@ -266,7 +266,7 @@ Neu crawl dinh ky loi:
 ## 13. Definition of Done
 
 - Workflow `load_static_snapshot` xanh.
-- Supabase co tren 50.000 ban ghi.
+- Supabase co tren 10.000 ban ghi da qua quality gate.
 - Public anon khong doc truc tiep duoc `curated_listings`.
 - `v_listing_map` doc duoc active + expired va khong co hidden.
 - Khong con Zalo hotline chung trong contact.

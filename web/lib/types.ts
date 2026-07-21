@@ -49,6 +49,9 @@ export type Listing = {
   description_clean?: string | null;
   content_hash?: string | null;
   record_completeness_score: number | null;
+  publication_quality_score?: number | null;
+  has_direct_contact?: boolean;
+  has_contact_name?: boolean;
   thumbnail_url: string | null;
   canonical_url: string;
   status: "active" | "expired" | "hidden";
@@ -68,6 +71,19 @@ export type ListingMapResponse = {
   dataset_mode?: string;
   dataset_version?: string;
   skipped_rows?: number;
+  quality_summary?: {
+    enabled: boolean;
+    input_rows: number;
+    valid_source_rows: number;
+    qualified_rows: number;
+    published_rows: number;
+    rejected_invalid_source_rows: number;
+    rejected_low_quality_rows: number;
+    trimmed_rows: number;
+    qualified_source_counts: Record<string, number>;
+    published_source_counts: Record<string, number>;
+    requirements: string[];
+  };
   etl_summary?: EtlSummary;
   etl_runs?: EtlRun[];
   items: Listing[];

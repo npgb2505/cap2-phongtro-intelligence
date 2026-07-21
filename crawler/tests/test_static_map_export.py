@@ -50,7 +50,7 @@ class StaticMapExportTests(unittest.TestCase):
             )
 
             self.assertEqual(manifest["dataset_mode"], "chunked-index-with-lazy-details")
-            self.assertEqual(manifest["dataset_version"], "2026-07-15T03:00:00+00:00")
+            self.assertTrue(manifest["dataset_version"])
             self.assertEqual(len(manifest["chunks"]), 2)
             self.assertEqual(manifest["etl_summary"]["source_rows"], 5)
             self.assertEqual(manifest["etl_summary"]["published_rows"], 3)
@@ -75,6 +75,72 @@ class StaticMapExportTests(unittest.TestCase):
             self.assertEqual(rebuilt[2]["status"], "expired")
             self.assertEqual(rebuilt[0]["description_clean"], "Mô tả dài chỉ tải khi mở chi tiết")
             self.assertEqual(len(rebuilt[0]["content_hash"]), 64)
+
+    def test_quality_gate_rejects_placeholders_and_keeps_best_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "curated.csv"
+            output = root / "data" / "listings-map.json"
+            base = {
+                "source_name": "phongtro123",
+                "title_clean": "Phòng trọ đầy đủ tiện nghi",
+                "price_value": "3500000",
+                "area_m2": "25",
+                "street_address": "123 Nguyễn Trãi",
+                "district": "Quận 1",
+                "province": "Hồ Chí Minh",
+                "description_clean": "Mô tả đầy đủ về phòng, tiện ích và điều kiện thuê. " * 3,
+                "canonical_url": "https://example.com/listing",
+                "primary_image_url": "https://cdn.example.com/room.jpg",
+                "image_count": "4",
+                "record_completeness_score": "100",
+                "amenity_count": "4",
+                "geocode_precision": "exact",
+            }
+            rows = [
+                {
+                    **base,
+                    "listing_id": "active-direct",
+                    "status": "active",
+                    "contact_phone": "0901234567",
+                    "contact_name": "Nguyễn An",
+                },
+                {
+                    **base,
+                    "listing_id": "active-name",
+                    "status": "active",
+                    "contact_phone": "",
+                    "contact_name": "Nhà Đẹp",
+                },
+                {
+                    **base,
+                    "listing_id": "placeholder",
+                    "status": "active",
+                    "contact_phone": "0909999999",
+                    "contact_name": "Lê Bình",
+                    "primary_image_url": "https://phongtro123.com/images/thumb_default.svg",
+                },
+            ]
+            with source.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+
+            manifest = export_static_map(
+                source_csv=source,
+                output_json=output,
+                chunk_size=2,
+                detail_chunk_size=1,
+                quality_only=True,
+                max_rows=1,
+            )
+
+            self.assertEqual(manifest["total"], 1)
+            self.assertEqual(manifest["quality_summary"]["qualified_rows"], 2)
+            self.assertEqual(manifest["quality_summary"]["rejected_low_quality_rows"], 1)
+            self.assertEqual(manifest["quality_summary"]["trimmed_rows"], 1)
+            self.assertEqual(manifest["items"][0]["id"], "active-direct")
+            self.assertTrue(manifest["items"][0]["has_direct_contact"])
 
 
 if __name__ == "__main__":

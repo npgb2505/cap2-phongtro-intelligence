@@ -118,7 +118,7 @@ jobs:
             python -m app.validate_curated --csv artifacts/curated/toan-quoc/listings_curated.csv --min-rows 1
           elif [ "$RUN_MODE" = "load_static_snapshot" ]; then
             python -m app.static_snapshot_to_csv --manifest ../web/public/data/listings-map.json --output-csv artifacts/deploy/listings_full_from_static.csv
-            python -m app.validate_curated --csv artifacts/deploy/listings_full_from_static.csv --min-rows 50000
+            python -m app.validate_curated --csv artifacts/deploy/listings_full_from_static.csv --min-rows 10000
           else
             python -m app.validate_curated --csv "../$INPUT_CSV_PATH" --min-rows 1000
           fi

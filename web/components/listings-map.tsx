@@ -53,7 +53,9 @@ function formatCurrency(value: number | null) {
 
 function imageUrl(item: Listing) {
   const candidate = item.primary_image_url || item.thumbnail_url;
-  return candidate && /^https?:\/\//i.test(candidate) ? candidate : null;
+  return candidate && /^https?:\/\//i.test(candidate) && !/(?:thumb_default|no[-_]image|placeholder|default[-_]image)/i.test(candidate)
+    ? candidate
+    : null;
 }
 
 function cleanDisplayText(value: string | null | undefined) {

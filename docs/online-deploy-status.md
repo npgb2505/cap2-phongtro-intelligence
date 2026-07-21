@@ -20,20 +20,20 @@ The public website does not depend on a paid server or database. Supabase is opt
 ## Verified release snapshot
 
 ```text
-Index rows:              117,320
-Detail rows:             117,320
-Index chunks:                 24
-Lazy detail chunks:          235
-Source provinces:             53
-ETL runs in manifest:          1
-Production sources:            3
+Index rows:               20,000
+Detail rows:              20,000
+Index chunks:                  4
+Lazy detail chunks:           40
+Source provinces:             36
+ETL runs in manifest:          2
+Production sources:            2
 ```
 
 ## Release checks
 
 - ESLint: passed.
 - Static-data integrity validator: passed.
-- Crawler test suite: 19 passed.
+- Crawler test suite: 24 passed.
 - Next.js production static export: passed.
 - Desktop static build: map, analysis dashboard, and ETL monitor verified.
 - No tracked environment file or credential detected.
@@ -53,7 +53,7 @@ Service ID: srv-d9fjrsgk1i2s73b01qfg
 Initial live commit: e382e9d
 ```
 
-The public deployment was verified with 117,320 snapshot rows, 117,201 rows after the default outlier rule, 3,891 map clusters, all analytics charts, the five-layer ETL monitor, no console warnings/errors, and no horizontal overflow at a mobile viewport.
+The current release uses a 20,000-row quality-gated snapshot. Every public row has a real image, usable contact, reasonable price, valid area, address, description, and canonical source URL. Active rows and direct contact channels rank first.
 
 Deployment instructions: [render-free-deployment.md](render-free-deployment.md).
 

@@ -141,15 +141,20 @@ export function EtlMonitor({ data }: Props) {
   const runs = data.etl_runs?.length ? data.etl_runs : fallbackRuns(summary);
   const sourceEntries = Object.entries(summary.source_counts).sort((a, b) => b[1] - a[1]);
   const largestSource = sourceEntries[0]?.[1] ?? 1;
-  const totalRemoved = summary.duplicate_rows + summary.rejected_rows;
-  const qualityRate = percent(summary.curated_rows - summary.unresolved_geocode_rows, summary.curated_rows);
+  const qualitySummary = data.quality_summary;
+  const totalRemoved = Math.max(summary.source_rows - summary.published_rows, 0);
+  const curationRejected = Math.max(summary.source_rows - summary.duplicate_rows - summary.curated_rows, 0);
+  const qualityQualified = qualitySummary?.qualified_rows ?? summary.curated_rows;
+  const qualityInput = qualitySummary?.valid_source_rows ?? summary.curated_rows;
+  const qualityRate = percent(qualityQualified, qualityInput);
   const runChart = runs.map((run) => ({
     ...run,
     label: formatRunDate(run.date)
   }));
   const qualityEvents = [
     { label: "Bản ghi trùng", value: summary.duplicate_rows },
-    { label: "Không đạt chuẩn", value: summary.rejected_rows },
+    { label: "Thiếu dữ liệu", value: qualitySummary?.rejected_low_quality_rows ?? summary.rejected_rows },
+    { label: "Ngoài top 20k", value: qualitySummary?.trimmed_rows ?? 0 },
     { label: "Chưa định vị", value: summary.unresolved_geocode_rows }
   ];
   const layers = [
@@ -161,7 +166,7 @@ export function EtlMonitor({ data }: Props) {
       value: summary.source_rows,
       label: "dòng đầu vào",
       ratio: 100,
-      facts: [`${sourceEntries.length} nguồn hợp lệ`, "Schema nguồn được lưu vết"]
+      facts: [`${sourceEntries.length} nguồn được xuất bản`, "Schema nguồn được lưu vết"]
     },
     {
       order: "02",
@@ -181,7 +186,7 @@ export function EtlMonitor({ data }: Props) {
       value: summary.curated_rows,
       label: "bản ghi đạt chuẩn",
       ratio: percent(summary.curated_rows, summary.deduplicated_rows),
-      facts: [`${summary.rejected_rows.toLocaleString("vi-VN")} dòng bị loại`, "Tỉnh, nguồn và liên hệ đã kiểm định"]
+      facts: [`${curationRejected.toLocaleString("vi-VN")} dòng lỗi schema`, "Giá, diện tích và địa chỉ đã chuẩn hóa"]
     },
     {
       order: "04",
@@ -195,13 +200,13 @@ export function EtlMonitor({ data }: Props) {
     },
     {
       order: "05",
-      title: "Phân phối dữ liệu",
-      description: "Đóng gói index nhẹ, detail tải lười và sẵn sàng nạp Supabase.",
+      title: "Quality gate và phân phối",
+      description: "Giữ tin có ảnh thật, liên hệ và trường cốt lõi trước khi đóng gói public.",
       icon: UploadCloud,
       value: summary.published_rows,
       label: "bản ghi xuất bản",
       ratio: percent(summary.published_rows, summary.curated_rows),
-      facts: [`${data.chunks?.length ?? 0} index chunk`, `${Math.ceil(summary.published_rows / (data.detail_chunk_size ?? 500))} detail chunk`]
+      facts: [`${qualityQualified.toLocaleString("vi-VN")} tin đủ điều kiện`, `${data.chunks?.length ?? 0} index + ${Math.ceil(summary.published_rows / (data.detail_chunk_size ?? 500))} detail chunk`]
     }
   ];
 
@@ -224,7 +229,7 @@ export function EtlMonitor({ data }: Props) {
       </header>
 
       <div className="etl-health-strip" aria-label="Sức khỏe pipeline">
-        <div><Activity size={17} strokeWidth={1.9} aria-hidden /><span>Tỷ lệ giữ lại</span><strong>{formatPercent(percent(summary.curated_rows, summary.source_rows))}</strong></div>
+        <div><Activity size={17} strokeWidth={1.9} aria-hidden /><span>Tỷ lệ xuất bản</span><strong>{formatPercent(percent(summary.published_rows, summary.source_rows))}</strong></div>
         <div><ShieldCheck size={17} strokeWidth={1.9} aria-hidden /><span>Đạt kiểm tra chất lượng</span><strong>{formatPercent(qualityRate)}</strong></div>
         <div><Server size={17} strokeWidth={1.9} aria-hidden /><span>Đã xuất bản</span><strong>{summary.published_rows.toLocaleString("vi-VN")}</strong></div>
         <div><CalendarClock size={17} strokeWidth={1.9} aria-hidden /><span>Lịch tự động</span><strong>CN, 10:17</strong></div>
@@ -298,7 +303,7 @@ export function EtlMonitor({ data }: Props) {
               <BarChart data={qualityEvents} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 4 }}>
                 <CartesianGrid horizontal={false} stroke="rgba(80, 122, 171, 0.15)" />
                 <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: "#607089", fontSize: 11 }} />
-                <YAxis type="category" dataKey="label" width={108} tickLine={false} axisLine={false} tick={{ fill: "#31445f", fontSize: 11 }} />
+                <YAxis type="category" dataKey="label" width={148} tickLine={false} axisLine={false} tick={{ fill: "#31445f", fontSize: 11 }} />
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Bar dataKey="value" name="Số dòng" fill="#176bda" radius={[0, 6, 6, 0]} />
               </BarChart>
@@ -308,7 +313,7 @@ export function EtlMonitor({ data }: Props) {
 
         <article className="etl-monitor-panel etl-source-panel">
           <div className="etl-panel-heading">
-            <div><h3>Đóng góp theo nguồn</h3><p>Số bản ghi hợp lệ sau curation.</p></div>
+            <div><h3>Đóng góp theo nguồn</h3><p>Số bản ghi trong snapshot public đã qua quality gate.</p></div>
             <span>{sourceEntries.length} crawler</span>
           </div>
           <div className="etl-source-list">
