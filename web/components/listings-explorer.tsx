@@ -267,6 +267,32 @@ function phoneUrl(value: string | null | undefined) {
   return /^0\d{9}$/.test(normalized) ? `tel:${normalized}` : null;
 }
 
+function socialContactUrl(value: string | null | undefined, allowedDomains: string[]) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    const matchesDomain = allowedDomains.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+    );
+
+    return (url.protocol === "https:" || url.protocol === "http:") && matchesDomain ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function zaloUrl(value: string | null | undefined) {
+  return socialContactUrl(value, ["zalo.me"]);
+}
+
+function facebookUrl(value: string | null | undefined) {
+  return socialContactUrl(value, ["facebook.com", "fb.com", "messenger.com"]);
+}
+
 function formatShortCurrency(value: number | null) {
   if (!value) {
     return "Chưa có";
@@ -532,6 +558,8 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
 
   const selectedListingBase = visibleItems.find((item) => item.id === selectedListingId) ?? visibleItems[0] ?? null;
   const selectedListing = detailedListing?.id === selectedListingBase?.id ? detailedListing : selectedListingBase;
+  const selectedZaloUrl = zaloUrl(selectedListing?.contact_zalo_url);
+  const selectedFacebookUrl = facebookUrl(selectedListing?.contact_facebook_url);
 
   useEffect(() => {
     let cancelled = false;
@@ -1050,13 +1078,13 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
                           <Phone size={15} strokeWidth={1.9} aria-hidden /> Gọi
                         </a>
                       ) : null}
-                      {selectedListing.contact_zalo_url ? (
-                        <a href={selectedListing.contact_zalo_url} target="_blank" rel="noreferrer">
+                      {selectedZaloUrl ? (
+                        <a href={selectedZaloUrl} target="_blank" rel="noreferrer">
                           <MessageCircle size={15} strokeWidth={1.9} aria-hidden /> Zalo
                         </a>
                       ) : null}
-                      {selectedListing.contact_facebook_url ? (
-                        <a href={selectedListing.contact_facebook_url} target="_blank" rel="noreferrer">
+                      {selectedFacebookUrl ? (
+                        <a href={selectedFacebookUrl} target="_blank" rel="noreferrer">
                           <Link2 size={15} strokeWidth={1.9} aria-hidden /> Facebook
                         </a>
                       ) : null}
