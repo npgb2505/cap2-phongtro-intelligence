@@ -65,7 +65,7 @@ def upsert_rows_to_csv(
     existing_by_key: dict[str, dict[str, Any]] = {}
 
     if target.exists():
-        with target.open("r", encoding="utf-8-sig", newline="") as handle:
+        with target.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
                 row = _normalize_table_row(row)

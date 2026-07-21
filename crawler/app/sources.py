@@ -18,7 +18,9 @@ from bs4 import BeautifulSoup
 from app.extractors.phongtro123 import Phongtro123Extractor
 from app.models import ListingRecord
 
-DEFAULT_SOURCE_NAMES = ["phongtro123", "alonhadat", "thuephongtro", "nhatot", "batdongsan", "mogi"]
+# Sources kept in the production dataset. The other adapters remain available for
+# diagnostics, but their current yield is too small or repetitive to publish.
+DEFAULT_SOURCE_NAMES = ["phongtro123", "nhatot", "mogi"]
 
 
 class ListingSource(Protocol):
@@ -283,7 +285,7 @@ class NhaTotApiSource:
             description=_clean_optional(ad.get("body")),
             contact_name=_clean_optional(ad.get("account_name") or ad.get("full_name")),
             image_count=_to_int(ad.get("number_of_images")) or len(set(image_urls)),
-            posted_at=posted_at or datetime.now(UTC),
+            posted_at=posted_at,
             amenities=_extract_amenities(str(ad.get("body") or "")),
             image_urls=sorted(set(image_urls)),
         )
@@ -360,7 +362,7 @@ class MogiSource:
             province=province,
             description=description,
             image_count=len(image_urls),
-            posted_at=datetime.now(UTC),
+            posted_at=_parse_date_text(_clean_optional(_text(soup.select_one(".prop-created")))) or datetime.now(UTC),
             amenities=_extract_amenities(description or title),
             image_urls=image_urls,
         )
@@ -409,7 +411,7 @@ class MogiSource:
             district=district,
             province=province,
             image_count=len(image_urls),
-            posted_at=datetime.now(UTC),
+            posted_at=_parse_date_text(_clean_optional(_text(card.select_one(".prop-created")))) or datetime.now(UTC),
             amenities=_extract_amenities(title),
             image_urls=image_urls,
         )

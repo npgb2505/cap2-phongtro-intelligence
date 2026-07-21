@@ -2,8 +2,8 @@ param(
     [int]$Pages = 3,
     [int]$MaxDetailPages = 20,
     [int]$DetailWorkers = 6,
-    [int]$ExactGeocodeLimit = 0,
-    [string]$Sources = "all"
+    [int]$ExactGeocodeLimit = 50,
+    [string]$Sources = "phongtro123,nhatot,mogi"
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,14 +23,24 @@ function Write-Log {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$timestamp] $Message"
     Write-Output $line
-    Add-Content -Path $logFile -Value $line -Encoding utf8
+    try {
+        Add-Content -Path $logFile -Value $line -Encoding utf8
+    }
+    catch {
+        Write-Warning "Skipping log write: $($_.Exception.Message)"
+    }
 }
 
 function Write-CommandOutput {
     process {
         $line = "$_"
         Write-Output $line
-        Add-Content -Path $logFile -Value $line -Encoding utf8
+        try {
+            Add-Content -Path $logFile -Value $line -Encoding utf8
+        }
+        catch {
+            Write-Warning "Skipping log write: $($_.Exception.Message)"
+        }
     }
 }
 

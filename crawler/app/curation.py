@@ -90,7 +90,24 @@ PROVINCE_ALIASES = {
     "da nang": "Đà Nẵng",
     "tp da nang": "Đà Nẵng",
     "ba ria vung tau": "Bà Rịa - Vũng Tàu",
+    "thua thien hue": "Huế",
 }
+
+CANONICAL_PROVINCES = (
+    "An Giang", "Bà Rịa - Vũng Tàu", "Bắc Giang", "Bắc Kạn", "Bạc Liêu", "Bắc Ninh",
+    "Bến Tre", "Bình Định", "Bình Dương", "Bình Phước", "Bình Thuận", "Cà Mau", "Cần Thơ",
+    "Cao Bằng", "Đà Nẵng", "Đắk Lắk", "Đắk Nông", "Điện Biên", "Đồng Nai", "Đồng Tháp",
+    "Gia Lai", "Hà Giang", "Hà Nam", "Hà Nội", "Hà Tĩnh", "Hải Dương", "Hải Phòng", "Hậu Giang",
+    "Hòa Bình", "Hồ Chí Minh", "Huế", "Hưng Yên", "Khánh Hòa", "Kiên Giang", "Kon Tum", "Lai Châu",
+    "Lâm Đồng", "Lạng Sơn", "Lào Cai", "Long An", "Nam Định", "Nghệ An", "Ninh Bình", "Ninh Thuận",
+    "Phú Thọ", "Phú Yên", "Quảng Bình", "Quảng Nam", "Quảng Ngãi", "Quảng Ninh", "Quảng Trị",
+    "Sóc Trăng", "Sơn La", "Tây Ninh", "Thái Bình", "Thái Nguyên", "Thanh Hóa", "Tiền Giang",
+    "Trà Vinh", "Tuyên Quang", "Vĩnh Long", "Vĩnh Phúc", "Yên Bái",
+)
+
+KNOWN_CONTACT_HOTLINES = {"0909316890"}
+CURATABLE_SOURCES = {"phongtro123", "nhatot", "mogi"}
+_PROVINCE_LOOKUP: dict[str, str] | None = None
 
 DISTRICT_ALIASES = {
     "quan 1": "Quận 1",
@@ -279,6 +296,7 @@ class CurationPipeline:
         self.province_location_cache: dict[str, ResolvedLocation | None] = {}
 
     def run(self, exact_geocode_limit: int = 120) -> CurationResult:
+        started_at = time.perf_counter()
         source_path = self.store.root / SOURCE_RELATIVE_PATH
         if not source_path.exists():
             raise FileNotFoundError(f"Missing source dataset: {source_path}")
@@ -293,6 +311,17 @@ class CurationPipeline:
             ),
             reverse=True,
         )
+        deduped_rows: list[dict[str, str]] = []
+        seen_source_keys: set[str] = set()
+        for row in rows:
+            source_key = _source_row_key(row)
+            if source_key and source_key in seen_source_keys:
+                continue
+            if source_key:
+                seen_source_keys.add(source_key)
+            deduped_rows.append(row)
+        duplicate_source_rows = len(rows) - len(deduped_rows)
+        rows = deduped_rows
         exact_budget = ExactGeocodeBudget(limit=exact_geocode_limit)
         curated_rows = [self._curate_row(row, exact_budget) for row in rows]
         curated_rows.sort(
@@ -323,12 +352,14 @@ class CurationPipeline:
                 "curated_csv_path": curated_csv_path,
                 "curated_json_path": curated_json_path,
                 "source_rows": len(source_rows),
-                "skipped_low_quality_rows": len(source_rows) - len(rows),
+                "skipped_low_quality_rows": len(source_rows) - len(rows) - duplicate_source_rows,
+                "duplicate_source_rows": duplicate_source_rows,
                 "total_rows": len(curated_rows),
                 "unique_provinces": len({row.get("province") for row in curated_rows if row.get("province")}),
                 "geocode_precision_counts": dict(precision_counts),
                 "exact_geocode_new_queries": exact_budget.used,
                 "cache_entries": len(self.geocoder.cache),
+                "duration_seconds": round(time.perf_counter() - started_at, 2),
             },
         )
 
@@ -352,8 +383,8 @@ class CurationPipeline:
         description = _clean_multiline_text(row.get("description"))
         amenities = _split_pipe_field(row.get("amenities_text"))
         image_urls = _split_pipe_field(row.get("image_urls_text"))
-        price_value = _to_int(row.get("price_value")) or _parse_price_text(row.get("price_text"))
-        area_m2 = _to_float(row.get("area_m2")) or _parse_area_text(row.get("area_text"))
+        price_value = _normalize_price_value(row.get("price_value"), row.get("price_text"))
+        area_m2 = _normalize_area_m2(row.get("area_m2"), row.get("area_text"))
 
         full_address = _clean_address_text(row.get("full_address"))
         province = _normalize_province(row.get("province"))
@@ -398,12 +429,15 @@ class CurationPipeline:
         posted_at = _normalize_datetime_text(row.get("posted_at"))
         expired_at = _normalize_datetime_text(row.get("expired_at"))
         status = _compute_status(expired_at)
+        contact_phone = normalize_phone(row.get("contact_phone"))
+        contact_name = normalize_contact_name(row.get("contact_name"))
+        contact_zalo_url = normalize_zalo_url(row.get("contact_zalo_url"), contact_phone)
         completeness_score = _compute_completeness_score(
             title=title,
             price_value=price_value,
             area_m2=area_m2,
             address=map_reference_address,
-            phone=row.get("contact_phone"),
+            phone=contact_phone,
             image_count=_to_int(row.get("image_count")),
             description=description,
         )
@@ -447,19 +481,34 @@ class CurationPipeline:
             "posted_at": posted_at,
             "expired_at": expired_at,
             "freshness_days": _compute_freshness_days(posted_at),
-            "contact_name": _clean_text(row.get("contact_name")),
-            "contact_phone": normalize_phone(row.get("contact_phone")),
-            "contact_zalo_url": _clean_text(row.get("contact_zalo_url")),
+            "contact_name": contact_name,
+            "contact_phone": contact_phone,
+            "contact_zalo_url": contact_zalo_url,
             "contact_facebook_url": _clean_text(row.get("contact_facebook_url")),
-            "image_count": _to_int(row.get("image_count")) or len(image_urls),
+            "image_count": _normalize_image_count(row.get("image_count"), image_urls),
             "primary_image_url": image_urls[0] if image_urls else None,
             "amenities_text": " | ".join(amenities),
             "amenity_count": len(amenities),
             "description_clean": description,
-            "content_hash": (row.get("content_hash") or "").strip(),
+            "content_hash": self._normalize_content_hash(row),
         }
         curated.update(amenity_flags)
         return curated
+
+    def _normalize_content_hash(self, row: dict[str, str]) -> str:
+        content_hash = (row.get("content_hash") or "").strip()
+        if content_hash:
+            return content_hash
+
+        seed_parts = [
+            row.get("canonical_url") or "",
+            row.get("source_name") or "",
+            row.get("source_post_id") or "",
+            row.get("title") or "",
+            row.get("posted_at") or "",
+        ]
+        seed = "|".join(part.strip() for part in seed_parts if part is not None)
+        return hashlib.sha256(seed.encode("utf-8")).hexdigest()
 
     def _get_address_parts(
         self,
@@ -514,9 +563,10 @@ class CurationPipeline:
             and exact_budget.can_use()
             and _is_exact_geocode_eligible(street_address, map_reference_address)
         ):
+            was_cache_hit = self.geocoder.is_cached(map_reference_address, "exact")
             exact = self._get_exact_location(map_reference_address)
+            exact_budget.consume_if_new(was_cache_hit)
             if exact:
-                exact_budget.consume_if_new(exact.was_cache_hit)
                 return exact
 
         locality_query = ", ".join([part for part in [district, province, "Vietnam"] if part])
@@ -607,20 +657,27 @@ class NominatimGeocoder:
             },
         )
         self.dirty = False
+        self.pending_writes = 0
 
     def _load_cache(self) -> dict[str, Any]:
         if not self.cache_path.exists():
             return {}
         return json.loads(self.cache_path.read_text(encoding="utf-8"))
 
+    def is_cached(self, query: str, precision: str) -> bool:
+        normalized_query = _clean_text(query)
+        return bool(normalized_query and f"v2:{precision}:{normalized_query.lower()}" in self.cache)
+
     def geocode(self, query: str, precision: str) -> ResolvedLocation | None:
         normalized_query = _clean_text(query)
         if not normalized_query:
             return None
 
-        cache_key = f"{precision}:{normalized_query.lower()}"
+        cache_key = f"v2:{precision}:{normalized_query.lower()}"
         if cache_key in self.cache:
             payload = self.cache[cache_key]
+            if payload.get("latitude") is None or payload.get("longitude") is None:
+                return None
             return ResolvedLocation(
                 latitude=payload.get("latitude"),
                 longitude=payload.get("longitude"),
@@ -636,7 +693,7 @@ class NominatimGeocoder:
                 params={
                     "q": normalized_query,
                     "format": "jsonv2",
-                    "limit": 1,
+                    "limit": 5,
                     "countrycodes": "vn",
                     "addressdetails": 1,
                 },
@@ -647,18 +704,21 @@ class NominatimGeocoder:
             return None
 
         time.sleep(1.05)
-        if not items:
+        accepted = next(
+            (item for item in items if _is_nominatim_result_acceptable(item, normalized_query, precision)),
+            None,
+        )
+        if accepted is None:
             self.cache[cache_key] = {"latitude": None, "longitude": None, "precision": None, "source": None, "display_name": None}
-            self.dirty = True
+            self._mark_dirty()
             return None
 
-        first = items[0]
         result = ResolvedLocation(
-            latitude=_to_float(first.get("lat")),
-            longitude=_to_float(first.get("lon")),
+            latitude=_to_float(accepted.get("lat")),
+            longitude=_to_float(accepted.get("lon")),
             precision=precision,
             source="nominatim",
-            display_name=first.get("display_name"),
+            display_name=accepted.get("display_name"),
             was_cache_hit=False,
         )
         self.cache[cache_key] = {
@@ -668,14 +728,104 @@ class NominatimGeocoder:
             "source": result.source,
             "display_name": result.display_name,
         }
-        self.dirty = True
+        self._mark_dirty()
         return result
+
+    def _mark_dirty(self) -> None:
+        self.dirty = True
+        self.pending_writes += 1
+        if self.pending_writes >= 25:
+            self.flush()
 
     def flush(self) -> None:
         if not self.dirty:
             return
-        self.cache_path.write_text(json.dumps(self.cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path = self.cache_path.with_suffix(f"{self.cache_path.suffix}.tmp")
+        temp_path.write_text(json.dumps(self.cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path.replace(self.cache_path)
         self.dirty = False
+        self.pending_writes = 0
+
+
+def _is_nominatim_result_acceptable(item: dict[str, Any], query: str, precision: str) -> bool:
+    latitude = _to_float(item.get("lat"))
+    longitude = _to_float(item.get("lon"))
+    if latitude is None or longitude is None:
+        return False
+    if not (8.0 <= latitude <= 24.0 and 102.0 <= longitude <= 110.0):
+        return False
+
+    address = item.get("address") if isinstance(item.get("address"), dict) else {}
+    display_name = _clean_text(item.get("display_name"))
+    category = _fold_text(str(item.get("category") or item.get("class") or ""))
+    address_type = _fold_text(str(item.get("addresstype") or item.get("type") or ""))
+    result_folded = _fold_text(" ".join([display_name, *[str(value) for value in address.values() if value]]))
+
+    if precision == "exact":
+        query_house_number = _extract_house_number(query)
+        result_house_number = _clean_house_number(address.get("house_number"))
+        if not query_house_number or query_house_number != result_house_number:
+            return False
+        query_road = _extract_query_road(query)
+        result_road = _clean_text(
+            address.get("road")
+            or address.get("pedestrian")
+            or address.get("residential")
+            or address.get("neighbourhood")
+        )
+        return bool(query_road and result_road and _road_tokens_match(query_road, result_road))
+
+    allowed_locality_categories = {"boundary", "place"}
+    allowed_locality_types = {
+        "administrative",
+        "borough",
+        "city",
+        "city district",
+        "county",
+        "municipality",
+        "province",
+        "state",
+        "state district",
+        "suburb",
+        "town",
+    }
+    if category not in allowed_locality_categories and address_type not in allowed_locality_types:
+        return False
+
+    query_parts = [_fold_text(part) for part in query.split(",") if _clean_text(part)]
+    meaningful_parts = [part for part in query_parts if part and part not in {"vietnam", "viet nam"}]
+    if not meaningful_parts:
+        return False
+    required_matches = 2 if len(meaningful_parts) >= 2 else 1
+    return sum(1 for part in meaningful_parts if part in result_folded) >= required_matches
+
+
+def _extract_house_number(value: str | None) -> str | None:
+    first_part = _clean_text(value).split(",", 1)[0]
+    match = re.match(r"^\s*([A-Za-z]?\d+[A-Za-z]?(?:[\/-]\d+[A-Za-z]?)+|\d+[A-Za-z]?)\b", first_part)
+    return _clean_house_number(match.group(1)) if match else None
+
+
+def _clean_house_number(value: Any) -> str | None:
+    cleaned = re.sub(r"\s+", "", str(value or "")).lower().strip(".,")
+    return cleaned or None
+
+
+def _extract_query_road(value: str) -> str | None:
+    first_part = _clean_text(value).split(",", 1)[0]
+    house_number = _extract_house_number(first_part)
+    if house_number:
+        first_part = re.sub(r"^\s*\S+\s+", "", first_part, count=1)
+    return _clean_text(first_part) or None
+
+
+def _road_tokens_match(first: str, second: str) -> bool:
+    ignored = {"duong", "pho", "road", "street", "hem", "ngo", "ngach"}
+    first_tokens = {token for token in re.findall(r"[a-z0-9]+", _fold_text(first)) if token not in ignored}
+    second_tokens = {token for token in re.findall(r"[a-z0-9]+", _fold_text(second)) if token not in ignored}
+    if not first_tokens or not second_tokens:
+        return False
+    return len(first_tokens & second_tokens) / len(first_tokens) >= 0.7
 
 
 def split_address(
@@ -778,17 +928,62 @@ def normalize_phone(value: str | None) -> str | None:
         return digits
     if len(digits) == 11 and digits.startswith("84"):
         return f"0{digits[2:]}"
-    return digits or None
+    return None
+
+
+def normalize_contact_name(value: str | None) -> str | None:
+    cleaned = _clean_text(value)
+    if not cleaned or len(cleaned) > 80 or re.search(r"\d", cleaned):
+        return None
+    folded = _fold_text(cleaned)
+    invalid_markers = (
+        "cho thue", "phong", "can ho", "noi that", "tien nghi", "trieu", "thang",
+        "dien tich", "duong ", "quan ", "gan ", "gia ", "ngay canh", "day du",
+    )
+    return None if any(marker in folded for marker in invalid_markers) else cleaned
+
+
+def normalize_zalo_url(value: str | None, contact_phone: str | None) -> str | None:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return None
+    match = re.search(r"zalo\.me/(?:pc\?|share/)?(?:phone=)?(0\d{9,10})", cleaned, flags=re.IGNORECASE)
+    if not match:
+        return None
+    zalo_phone = match.group(1)
+    if zalo_phone in KNOWN_CONTACT_HOTLINES:
+        return None
+    if contact_phone and zalo_phone != contact_phone:
+        return None
+    return cleaned
 
 
 def _is_curatable_source_row(row: dict[str, str]) -> bool:
     title = _clean_text(row.get("title"))
     canonical_url = _clean_text(row.get("canonical_url"))
-    if not title or not canonical_url:
+    source_value = _clean_text(row.get("source_name"))
+    if not title or not canonical_url or source_value not in CURATABLE_SOURCES:
         return False
 
     folded_title = _fold_text(title)
-    return not any(marker in folded_title for marker in BAD_TITLE_MARKERS)
+    if any(marker in folded_title for marker in BAD_TITLE_MARKERS):
+        return False
+    if source_value == "nhatot" and re.match(
+        r"^(?:minh\s+)?can tim (?:p?tro|nha tro|phong tro|phong|nha thue)\b",
+        folded_title,
+    ):
+        return False
+    source_name = re.escape(source_value)
+    return re.search(rf"{source_name},\d+,https?://", title, flags=re.IGNORECASE) is None
+
+
+def _source_row_key(row: dict[str, str]) -> str:
+    canonical_url = _clean_text(row.get("canonical_url"))
+    if canonical_url:
+        return canonical_url.lower().rstrip("/")
+    source_name = _clean_text(row.get("source_name"))
+    source_post_id = _clean_text(row.get("source_post_id"))
+    return f"{source_name}:{source_post_id}" if source_name and source_post_id else ""
 
 
 def _normalize_province(value: str | None) -> str | None:
@@ -801,21 +996,24 @@ def _normalize_province(value: str | None) -> str | None:
     if not cleaned:
         return None
     folded = _fold_text(cleaned)
-    if folded.startswith("ho chi minh"):
-        return "Hồ Chí Minh"
-    if folded.startswith("ha noi"):
-        return "Hà Nội"
-    if folded.startswith("da nang"):
-        return "Đà Nẵng"
-    if folded.startswith("binh duong"):
-        return "Bình Dương"
     if re.match(r"^(duong|ngo|ngach|hem|pho|so|phuong|xa|thi tran)\s+", folded):
         return None
-    alias = PROVINCE_ALIASES.get(folded)
-    if alias:
-        return alias
     cleaned = re.sub(r"^(tp\.?|thành phố)\s+", "", cleaned, flags=re.IGNORECASE)
-    return cleaned.strip().title().replace("Hồ Chí Minh", "Hồ Chí Minh").replace("Đà Nẵng", "Đà Nẵng")
+    return _province_lookup().get(_fold_text(cleaned))
+
+
+def _province_lookup() -> dict[str, str]:
+    global _PROVINCE_LOOKUP
+    if _PROVINCE_LOOKUP is None:
+        _PROVINCE_LOOKUP = {_fold_text(name): name for name in CANONICAL_PROVINCES}
+        _PROVINCE_LOOKUP.update(PROVINCE_ALIASES)
+        _PROVINCE_LOOKUP.update({
+            "ba ria, vung tau": "Bà Rịa - Vũng Tàu",
+            "ba ria - vung tau": "Bà Rịa - Vũng Tàu",
+            "thua thien hue": "Huế",
+            "tp hue": "Huế",
+        })
+    return _PROVINCE_LOOKUP
 
 
 def _normalize_district(value: str | None) -> str | None:
@@ -870,7 +1068,7 @@ def _clean_text(value: str | None) -> str:
 
 def _clean_multiline_text(value: str | None) -> str:
     lines = [re.sub(r"\s+", " ", line).strip() for line in (value or "").splitlines()]
-    return "\n".join([line for line in lines if line])
+    return "\n".join([line for line in lines if line and not re.fullmatch(r"[<=>|]{7,}", line)])
 
 
 def _split_pipe_field(value: str | None) -> list[str]:
@@ -885,12 +1083,37 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
+def _normalize_image_count(value: Any, image_urls: list[str]) -> int:
+    parsed = _to_int(value)
+    if parsed is None or parsed < 0 or parsed > 1000:
+        return len(image_urls)
+    return parsed
+
+
 def _to_float(value: Any) -> float | None:
     try:
         cleaned = str(value).strip()
         return float(cleaned) if cleaned else None
     except Exception:
         return None
+
+
+def _normalize_area_m2(raw_area: Any, area_text: str | None) -> float | None:
+    parsed = _to_float(raw_area) or _parse_area_text(area_text)
+    if parsed is None or parsed <= 0:
+        return None
+    if parsed > 100000:
+        return None
+    return parsed
+
+
+def _normalize_price_value(raw_price: Any, price_text: str | None) -> int | None:
+    parsed = _to_int(raw_price) or _parse_price_text(price_text)
+    if parsed is None or parsed <= 0:
+        return None
+    if parsed > 1_000_000_000_000:
+        return None
+    return parsed
 
 
 def _parse_price_text(value: str | None) -> int | None:

@@ -10,6 +10,7 @@ from app.config import settings
 from app.curation import CurationPipeline
 from app.pipelines.bootstrap import BootstrapPipeline
 from app.pipelines.incremental import IncrementalPipeline
+from app.pipelines.source_backfill import run_balanced_backfill
 from app.sources import DEFAULT_SOURCE_NAMES, build_sources
 from app.storage import LocalArtifactStore
 
@@ -42,6 +43,14 @@ def build_parser() -> argparse.ArgumentParser:
     incremental.add_argument("--max-detail-pages", type=int, default=None)
     incremental.add_argument("--detail-workers", type=int, default=settings.detail_worker_count)
     incremental.add_argument("--sources", default=DEFAULT_SOURCES)
+
+    balanced = subparsers.add_parser("balanced-backfill")
+    balanced.add_argument("--city", default="all")
+    balanced.add_argument("--sources", default="nhatot,mogi")
+    balanced.add_argument("--chunk-pages", type=int, default=100)
+    balanced.add_argument("--search-workers", type=int, default=4)
+    balanced.add_argument("--max-chunks", type=int, default=None)
+    balanced.add_argument("--reset-state", action="store_true")
 
     curated = subparsers.add_parser("transform-curated")
     curated.add_argument("--exact-geocode-limit", type=int, default=120)
@@ -81,6 +90,17 @@ def main() -> None:
             pages=args.pages,
             max_detail_pages=args.max_detail_pages,
             detail_workers=args.detail_workers,
+        )
+    elif args.command == "balanced-backfill":
+        result = run_balanced_backfill(
+            store=store,
+            client=client,
+            city=args.city,
+            source_names=_parse_source_names(args.sources),
+            chunk_pages=args.chunk_pages,
+            search_workers=args.search_workers,
+            max_chunks=args.max_chunks,
+            reset_state=args.reset_state,
         )
     else:
         result = CurationPipeline(store).run(exact_geocode_limit=args.exact_geocode_limit)

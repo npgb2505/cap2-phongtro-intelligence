@@ -24,7 +24,7 @@ def main() -> None:
         max_detail_pages=_optional_int_env("PT_MAX_DETAIL_PAGES", 20),
         detail_workers=_int_env("PT_DETAIL_WORKERS", settings.detail_worker_count),
     )
-    curation = CurationPipeline(store).run(exact_geocode_limit=_int_env("PT_EXACT_GEOCODE_LIMIT", 0))
+    curation = CurationPipeline(store).run(exact_geocode_limit=_int_env("PT_EXACT_GEOCODE_LIMIT", 50))
 
     curated_csv = store.root / CURATED_RELATIVE_PATH
     database_result = None

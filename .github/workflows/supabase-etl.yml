@@ -1,14 +1,17 @@
 name: Supabase ETL
 
 on:
+  schedule:
+    - cron: "17 3 * * 0"
   workflow_dispatch:
     inputs:
       run_mode:
-        description: "Use load_existing_csv for safe deploy, or crawl_then_load for incremental crawl before loading"
+        description: "Load the full tracked snapshot, a compact CSV, or crawl incrementally"
         required: true
-        default: "load_existing_csv"
+        default: "load_static_snapshot"
         type: choice
         options:
+          - load_static_snapshot
           - load_existing_csv
           - crawl_then_load
       csv_path:
@@ -34,7 +37,7 @@ on:
       exact_geocode_limit:
         description: "Exact geocode budget when run_mode=crawl_then_load"
         required: false
-        default: "0"
+        default: "50"
 
 concurrency:
   group: supabase-etl
@@ -43,6 +46,14 @@ concurrency:
 jobs:
   load:
     runs-on: ubuntu-latest
+    env:
+      RUN_MODE: ${{ inputs.run_mode || 'crawl_then_load' }}
+      INPUT_CSV_PATH: ${{ inputs.csv_path || 'crawler/artifacts/deploy/listings_deploy.csv' }}
+      CRAWL_CITY: ${{ inputs.city || 'all' }}
+      CRAWL_PAGES: ${{ inputs.pages || '1' }}
+      CRAWL_MAX_DETAILS: ${{ inputs.max_detail_pages || '5' }}
+      CRAWL_SOURCES: ${{ inputs.sources || 'phongtro123,nhatot,mogi' }}
+      EXACT_GEOCODE_LIMIT: ${{ inputs.exact_geocode_limit || '50' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,34 +84,56 @@ jobs:
         run: python -m app.apply_sql --file ../sql/schema.sql
 
       - name: Install crawler
-        if: ${{ inputs.run_mode == 'crawl_then_load' }}
         working-directory: crawler
         run: pip install -e .
 
+      - name: Restore geocode cache
+        if: ${{ env.RUN_MODE == 'crawl_then_load' }}
+        uses: actions/cache@v4
+        with:
+          path: crawler/artifacts/geocoding
+          key: geocode-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            geocode-${{ runner.os }}-
+
       - name: Run incremental crawler
-        if: ${{ inputs.run_mode == 'crawl_then_load' }}
+        if: ${{ env.RUN_MODE == 'crawl_then_load' }}
         working-directory: crawler
         run: >
           python -m app.main incremental
-          --city "${{ inputs.city }}"
-          --pages "${{ inputs.pages }}"
-          --max-detail-pages "${{ inputs.max_detail_pages }}"
-          --sources "${{ inputs.sources }}"
+          --city "$CRAWL_CITY"
+          --pages "$CRAWL_PAGES"
+          --max-detail-pages "$CRAWL_MAX_DETAILS"
+          --sources "$CRAWL_SOURCES"
 
       - name: Build curated dataset
-        if: ${{ inputs.run_mode == 'crawl_then_load' }}
+        if: ${{ env.RUN_MODE == 'crawl_then_load' }}
         working-directory: crawler
-        run: python -m app.main transform-curated --exact-geocode-limit "${{ inputs.exact_geocode_limit }}"
+        run: python -m app.main transform-curated --exact-geocode-limit "$EXACT_GEOCODE_LIMIT"
+
+      - name: Validate curated data
+        working-directory: crawler
+        run: |
+          if [ "$RUN_MODE" = "crawl_then_load" ]; then
+            python -m app.validate_curated --csv artifacts/curated/toan-quoc/listings_curated.csv --min-rows 1
+          elif [ "$RUN_MODE" = "load_static_snapshot" ]; then
+            python -m app.static_snapshot_to_csv --manifest ../web/public/data/listings-map.json --output-csv artifacts/deploy/listings_full_from_static.csv
+            python -m app.validate_curated --csv artifacts/deploy/listings_full_from_static.csv --min-rows 50000
+          else
+            python -m app.validate_curated --csv "../$INPUT_CSV_PATH" --min-rows 1000
+          fi
 
       - name: Load curated CSV into Supabase
         working-directory: backend
         env:
           PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          if [ "${{ inputs.run_mode }}" = "crawl_then_load" ]; then
-            python -m app.load_curated --csv ../crawler/artifacts/curated/toan-quoc/listings_curated.csv
+          if [ "$RUN_MODE" = "crawl_then_load" ]; then
+            python -m app.load_curated --csv ../crawler/artifacts/curated/toan-quoc/listings_curated.csv --keep-existing
+          elif [ "$RUN_MODE" = "load_static_snapshot" ]; then
+            python -m app.load_curated --csv ../crawler/artifacts/deploy/listings_full_from_static.csv
           else
-            python -m app.load_curated --csv ../${{ inputs.csv_path }}
+            python -m app.load_curated --csv "../$INPUT_CSV_PATH"
           fi
 
       - name: Apply Supabase views and RLS
@@ -113,4 +146,4 @@ jobs:
         working-directory: backend
         env:
           PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python -m app.check_supabase_load --min-rows 1
+        run: python -m app.check_supabase_load --min-rows 1000

@@ -1,23 +1,25 @@
 services:
   - type: web
-    name: cap2-phongtro-api
-    runtime: docker
-    plan: free
-    region: singapore
-    dockerfilePath: ./backend/Dockerfile.render
-    dockerContext: .
-    healthCheckPath: /health
+    name: phongtro-intelligence
+    runtime: static
+    buildCommand: cd web && npm ci && npm run lint && npm run validate:data && npm run build
+    staticPublishPath: ./web/out
     autoDeployTrigger: commit
     envVars:
-      - key: PT_APP_ENV
-        value: production
-      - key: PT_APP_DEBUG
-        value: "false"
-      - key: PT_DATABASE_ENABLED
-        value: "false"
-      - key: PT_LISTING_DATASET_PATH
-        value: /app/data/listings_curated.csv
-      - key: PT_LISTING_MAP_DEFAULT_LIMIT
-        value: "900"
-      - key: PT_CORS_ORIGINS
-        value: "*"
+      - key: RENDER_STATIC
+        value: "true"
+      - key: NEXT_PUBLIC_STATIC_DATA_PATH
+        value: /data/listings-map.json
+    headers:
+      - path: /_next/static/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /data/*
+        name: Cache-Control
+        value: public, max-age=3600, stale-while-revalidate=86400
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin

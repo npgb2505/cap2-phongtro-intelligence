@@ -1,4 +1,6 @@
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from app.client import PhongtroHttpClient
 from app.config import settings
@@ -14,6 +16,7 @@ class BootstrapPipeline:
         self.store = store
         self.sources = sources
         self.client = client
+        self._thread_local = threading.local()
 
     def run(
         self,
@@ -22,6 +25,7 @@ class BootstrapPipeline:
         max_pages: int,
         max_detail_pages: int | None = None,
         detail_workers: int = 1,
+        search_workers: int = 1,
     ) -> CrawlResult:
         artifact_paths: list[str] = []
         discovered_urls = 0
@@ -33,25 +37,27 @@ class BootstrapPipeline:
 
         for source in self.sources:
             source_payloads: list[dict] = []
-            for page in range(start_page, start_page + max_pages):
-                search_url = source.build_search_url(city, page=page, incremental=False)
-                try:
-                    search_fetcher = getattr(source, "fetch_search_text", None)
-                    if search_fetcher:
-                        search_html = search_fetcher(city, page, incremental=False)
-                    else:
-                        search_html = self.client.fetch_text(search_url)
-                except Exception as exc:
+            pages = list(range(start_page, start_page + max_pages))
+            if search_workers > 1:
+                with ThreadPoolExecutor(max_workers=search_workers) as executor:
+                    search_results = dict(executor.map(lambda page: (page, self._fetch_search(source, city, page, parallel=True)), pages))
+            else:
+                search_results = {page: self._fetch_search(source, city, page, parallel=False) for page in pages}
+
+            for page in pages:
+                search_url, search_html, search_error = search_results[page]
+                if search_error is not None:
                     failed_urls += 1
                     source_errors.append(
                         {
                             "source_name": source.name,
                             "page": page,
                             "url": search_url,
-                            "error": f"{type(exc).__name__}: {exc}",
+                            "error": f"{type(search_error).__name__}: {search_error}",
                         }
                     )
                     continue
+                assert search_html is not None
                 if settings.save_raw_html:
                     artifact_paths.append(self.store.write_text(f"raw/search/{source.name}/{scope}/page_{page}.html", search_html))
 
@@ -138,6 +144,30 @@ class BootstrapPipeline:
             pages_crawled=pages_crawled,
             artifact_paths=artifact_paths,
         )
+
+    def _fetch_search(
+        self,
+        source: ListingSource,
+        city: str,
+        page: int,
+        *,
+        parallel: bool,
+    ) -> tuple[str, str | None, Exception | None]:
+        search_url = source.build_search_url(city, page=page, incremental=False)
+        try:
+            search_fetcher = getattr(source, "fetch_search_text", None)
+            if search_fetcher:
+                return search_url, search_fetcher(city, page, incremental=False), None
+            if parallel:
+                client = getattr(self._thread_local, "client", None)
+                if client is None:
+                    client = PhongtroHttpClient()
+                    self._thread_local.client = client
+            else:
+                client = self.client
+            return search_url, client.fetch_text(search_url), None
+        except Exception as exc:
+            return search_url, None, exc
 
     def get_last_page(self, city: str) -> int | None:
         last_pages: list[int] = []

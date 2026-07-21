@@ -52,6 +52,8 @@ export type Listing = {
   thumbnail_url: string | null;
   canonical_url: string;
   status: "active" | "expired" | "hidden";
+  detail_path?: string | null;
+  detail_source?: "static" | "supabase" | null;
 };
 
 export type ListingMapResponse = {
@@ -62,7 +64,39 @@ export type ListingMapResponse = {
   deploy_source_counts?: Record<string, number>;
   chunks?: string[];
   chunk_size?: number;
+  detail_chunk_size?: number;
   dataset_mode?: string;
   skipped_rows?: number;
+  etl_summary?: EtlSummary;
+  etl_runs?: EtlRun[];
   items: Listing[];
+};
+
+export type EtlSummary = {
+  generated_at: string;
+  status: "success" | "running" | "failed";
+  source_rows: number;
+  deduplicated_rows: number;
+  duplicate_rows: number;
+  rejected_rows: number;
+  curated_rows: number;
+  located_rows: number;
+  exact_geocoded_rows: number;
+  unresolved_geocode_rows: number;
+  published_rows: number;
+  duration_seconds?: number | null;
+  source_counts: Record<string, number>;
+  status_counts: Record<string, number>;
+};
+
+export type EtlRun = {
+  date: string;
+  generated_at: string;
+  status: "success" | "running" | "failed";
+  source_rows: number;
+  curated_rows: number;
+  rejected_rows: number;
+  located_rows: number;
+  published_rows: number;
+  duration_seconds?: number | null;
 };

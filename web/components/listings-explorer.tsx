@@ -1,9 +1,65 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { startTransition, useDeferredValue, useMemo, useState } from "react";
+/* Listing images come from heterogeneous crawler sources and cannot share a stable Next Image loader. */
+/* eslint-disable @next/next/no-img-element */
 
-import { formatDistrict, formatPrecision } from "../lib/format";
+import dynamic from "next/dynamic";
+import {
+  BarChart3,
+  Building2,
+  ChevronDown,
+  Clock3,
+  Database,
+  ExternalLink,
+  Filter,
+  Image as ImageIcon,
+  Link2,
+  MapPinOff,
+  MapPinned,
+  MessageCircle,
+  PanelRightOpen,
+  Phone,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  Workflow,
+  X
+} from "lucide-react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
+
+import { formatDistrict } from "../lib/format";
+import { fetchListingDetails } from "../lib/api";
+import { EtlMonitor } from "./etl-monitor";
+import {
+  buildMapLocationGroups,
+  listingAddressLevel,
+  locationLevelCounts,
+  MAP_LOCATION_LABELS,
+  MapLocationLevel
+} from "../lib/map-locations";
 import { Listing, ListingMapResponse } from "../lib/types";
 
 const ListingsMap = dynamic(() => import("./listings-map").then((module) => module.ListingsMap), {
@@ -13,19 +69,74 @@ const ListingsMap = dynamic(() => import("./listings-map").then((module) => modu
 type Props = {
   initialData: ListingMapResponse;
   isLoading?: boolean;
+  loadError?: string | null;
 };
 
-type TabKey = "search" | "dashboard";
+type TabKey = "search" | "dashboard" | "monitor";
 
-type ChartItem = {
-  label: string;
-  value: number;
-  detail?: string;
+type AmenityKey =
+  | "has_aircon"
+  | "has_private_wc"
+  | "has_loft"
+  | "has_parking"
+  | "has_security"
+  | "has_fingerprint_lock"
+  | "allows_free_hours"
+  | "has_balcony"
+  | "has_kitchen"
+  | "has_fridge"
+  | "has_washer";
+
+const RESULT_BATCH_SIZE = 60;
+const SEARCH_DEBOUNCE_MS = 450;
+const MAX_REASONABLE_MONTHLY_PRICE = 30_000_000;
+const CHART_COLORS = ["#2563eb", "#0891b2", "#4f46e5", "#0ea5e9", "#60a5fa", "#14b8a6"];
+const CHART_TOOLTIP_STYLE = {
+  border: "1px solid rgba(77, 119, 171, 0.28)",
+  borderRadius: 8,
+  background: "rgba(248, 252, 255, 0.96)",
+  boxShadow: "0 12px 32px rgba(31, 79, 137, 0.14)",
+  color: "#18324f",
+  fontSize: 12
 };
 
-const RESULT_BATCH_SIZE = 500;
-const INITIAL_MAP_MARKER_LIMIT = 1500;
-const MAP_MARKER_BATCH_SIZE = 1500;
+const PROVINCE_GROUPS: Array<{ name: string; aliases: string[] }> = [
+  { name: "Hà Nội", aliases: ["Hà Nội"] },
+  { name: "Huế", aliases: ["Huế", "Thừa Thiên Huế"] },
+  { name: "Cao Bằng", aliases: ["Cao Bằng"] },
+  { name: "Điện Biên", aliases: ["Điện Biên"] },
+  { name: "Hà Tĩnh", aliases: ["Hà Tĩnh"] },
+  { name: "Lai Châu", aliases: ["Lai Châu"] },
+  { name: "Lạng Sơn", aliases: ["Lạng Sơn"] },
+  { name: "Nghệ An", aliases: ["Nghệ An"] },
+  { name: "Quảng Ninh", aliases: ["Quảng Ninh"] },
+  { name: "Sơn La", aliases: ["Sơn La"] },
+  { name: "Thanh Hóa", aliases: ["Thanh Hóa"] },
+  { name: "Tuyên Quang", aliases: ["Tuyên Quang", "Hà Giang"] },
+  { name: "Lào Cai", aliases: ["Lào Cai", "Yên Bái"] },
+  { name: "Thái Nguyên", aliases: ["Thái Nguyên", "Bắc Kạn"] },
+  { name: "Phú Thọ", aliases: ["Phú Thọ", "Vĩnh Phúc", "Hòa Bình"] },
+  { name: "Bắc Ninh", aliases: ["Bắc Ninh", "Bắc Giang"] },
+  { name: "Hưng Yên", aliases: ["Hưng Yên", "Thái Bình"] },
+  { name: "Hải Phòng", aliases: ["Hải Phòng", "Hải Dương"] },
+  { name: "Ninh Bình", aliases: ["Ninh Bình", "Hà Nam", "Nam Định"] },
+  { name: "Quảng Trị", aliases: ["Quảng Trị", "Quảng Bình"] },
+  { name: "Đà Nẵng", aliases: ["Đà Nẵng", "Quảng Nam"] },
+  { name: "Quảng Ngãi", aliases: ["Quảng Ngãi", "Kon Tum"] },
+  { name: "Gia Lai", aliases: ["Gia Lai", "Bình Định"] },
+  { name: "Khánh Hòa", aliases: ["Khánh Hòa", "Ninh Thuận"] },
+  { name: "Lâm Đồng", aliases: ["Lâm Đồng", "Đắk Nông", "Bình Thuận"] },
+  { name: "Đắk Lắk", aliases: ["Đắk Lắk", "Phú Yên"] },
+  { name: "Hồ Chí Minh", aliases: ["Hồ Chí Minh", "TPHCM", "Bình Dương", "Bà Rịa - Vũng Tàu", "Bà Rịa, Vũng Tàu"] },
+  { name: "Đồng Nai", aliases: ["Đồng Nai", "Bình Phước"] },
+  { name: "Tây Ninh", aliases: ["Tây Ninh", "Long An"] },
+  { name: "Cần Thơ", aliases: ["Cần Thơ", "Sóc Trăng", "Hậu Giang"] },
+  { name: "Vĩnh Long", aliases: ["Vĩnh Long", "Bến Tre", "Trà Vinh"] },
+  { name: "Đồng Tháp", aliases: ["Đồng Tháp", "Tiền Giang"] },
+  { name: "Cà Mau", aliases: ["Cà Mau", "Bạc Liêu"] },
+  { name: "An Giang", aliases: ["An Giang", "Kiên Giang"] }
+];
+const CURRENT_PROVINCES = PROVINCE_GROUPS.map((group) => group.name);
 
 const SOURCE_LABELS: Record<string, string> = {
   phongtro123: "Phongtro123",
@@ -54,8 +165,7 @@ const SORT_OPTIONS = [
   { value: "recommended", label: "Gợi ý tốt nhất" },
   { value: "price_asc", label: "Giá thấp trước" },
   { value: "price_desc", label: "Giá cao trước" },
-  { value: "area_desc", label: "Diện tích lớn trước" },
-  { value: "score_desc", label: "Tin đầy đủ nhất" }
+  { value: "area_desc", label: "Diện tích lớn trước" }
 ] as const;
 
 const PRICE_BUCKETS = [
@@ -73,7 +183,7 @@ const AREA_BUCKETS = [
   { label: "Trên 50 m2", min: 50, max: Number.POSITIVE_INFINITY }
 ];
 
-const AMENITY_FLAGS: Array<{ key: keyof Listing; label: string }> = [
+const AMENITY_FLAGS: Array<{ key: AmenityKey; label: string }> = [
   { key: "has_aircon", label: "Máy lạnh" },
   { key: "has_private_wc", label: "WC riêng" },
   { key: "has_loft", label: "Gác lửng" },
@@ -87,8 +197,46 @@ const AMENITY_FLAGS: Array<{ key: keyof Listing; label: string }> = [
   { key: "has_washer", label: "Máy giặt" }
 ];
 
+function normalizeProvinceName(value: string) {
+  return value
+    .normalize("NFC")
+    .trim()
+    .replace(/^(tỉnh|thành phố|tp\.?)[\s:]+/i, "")
+    .replace(/[.,-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("vi-VN");
+}
+
+const PROVINCE_ALIAS_LOOKUP = new Map(
+  PROVINCE_GROUPS.flatMap((group) => group.aliases.map((alias) => [normalizeProvinceName(alias), group.name] as const))
+);
+
+function canonicalProvince(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  return PROVINCE_ALIAS_LOOKUP.get(normalizeProvinceName(value)) ?? null;
+}
+
 function cleanDisplayText(value: string | null | undefined) {
   return (value ?? "").replace(/[\u2014\u2013]/g, "-");
+}
+
+function cleanDescriptionText(value: string | null | undefined) {
+  return cleanDisplayText(value)
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\b[a-f0-9]{64}\b/gi, "")
+    .replace(/(?:^|\s)@(?:phongtro123|nhatot|mogi|thuephongtro|batdongsan|alonhadat)[,\s][\s\S]*$/i, "")
+    .replace(/(?:phongtro123|nhatot|mogi|thuephongtro|batdongsan|alonhadat),\d+,[\s\S]*$/i, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function mapLocationLabel(item: Listing, mappedLevel?: MapLocationLevel) {
+  const level = mappedLevel ?? listingAddressLevel(item);
+  return level ? MAP_LOCATION_LABELS[level] : "Chưa có vị trí";
 }
 
 function formatCurrency(value: number | null) {
@@ -99,6 +247,24 @@ function formatCurrency(value: number | null) {
     return `${(value / 1_000_000).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} triệu/tháng`;
   }
   return `${value.toLocaleString("vi-VN")} VND`;
+}
+
+function formatDisplayDate(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("vi-VN").format(date);
+}
+
+function googleMapsSearchUrl(item: Listing) {
+  const query = item.full_address || item.street_address || [item.district, item.province].filter(Boolean).join(", ");
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || "Việt Nam")}`;
+}
+
+function phoneUrl(value: string | null | undefined) {
+  const normalized = (value ?? "").replace(/[^\d+]/g, "");
+  return /^0\d{9}$/.test(normalized) ? `tel:${normalized}` : null;
 }
 
 function formatShortCurrency(value: number | null) {
@@ -154,7 +320,8 @@ function furnishingLabel(value: string | null) {
 }
 
 function imageUrl(item: Listing | null) {
-  return item?.primary_image_url || item?.thumbnail_url || null;
+  const candidate = item?.primary_image_url || item?.thumbnail_url || null;
+  return candidate && /^https?:\/\//i.test(candidate) ? candidate : null;
 }
 
 function countBy(items: Listing[], getKey: (item: Listing) => string | null | undefined) {
@@ -204,56 +371,34 @@ function bucketCounts(items: Listing[], buckets: { label: string; min: number; m
   }));
 }
 
-function ChartList({ items, total }: { items: ChartItem[]; total: number }) {
-  const maxValue = Math.max(...items.map((item) => item.value), 1);
+function DebouncedSearchField({ value, onDebouncedChange }: { value: string; onDebouncedChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (draft === value) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => onDebouncedChange(draft), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [draft, onDebouncedChange, value]);
 
   return (
-    <div className="chart-list">
-      {items.map((item) => {
-        const width = Math.max(4, (item.value / maxValue) * 100);
-        const percent = total ? (item.value / total) * 100 : 0;
-        return (
-          <div className="chart-row" key={item.label}>
-            <div className="chart-row-head">
-              <span>{item.label}</span>
-              <strong>{item.value.toLocaleString("vi-VN")}</strong>
-            </div>
-            <div className="chart-track" aria-hidden>
-              <span style={{ width: `${width}%` }} />
-            </div>
-            <p>{item.detail ?? formatPercent(percent)}</p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function DonutChart({ items, total }: { items: ChartItem[]; total: number }) {
-  const colors = ["#2563eb", "#0891b2", "#4f46e5", "#0ea5e9", "#60a5fa", "#93c5fd"];
-  let cursor = 0;
-  const gradientParts = items.map((item, index) => {
-    const start = total ? (cursor / total) * 100 : 0;
-    cursor += item.value;
-    const end = total ? (cursor / total) * 100 : 0;
-    return `${colors[index % colors.length]} ${start}% ${end}%`;
-  });
-  const background = `conic-gradient(${gradientParts.join(", ") || "#dbeafe 0% 100%"})`;
-
-  return (
-    <div className="donut-wrap">
-      <div className="donut-chart" style={{ background }}>
-        <span>{total.toLocaleString("vi-VN")}</span>
+    <label className="search-field">
+      <span><Search size={14} strokeWidth={1.9} aria-hidden /> Tìm kiếm</span>
+      <div className="input-with-icon">
+        <Search size={17} strokeWidth={1.9} aria-hidden />
+        <input
+          type="search"
+          placeholder="Tên đường, quận, tiêu đề"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
       </div>
-      <div className="donut-legend">
-        {items.map((item, index) => (
-          <span key={item.label}>
-            <i style={{ background: colors[index % colors.length] }} />
-            {item.label}
-          </span>
-        ))}
-      </div>
-    </div>
+    </label>
   );
 }
 
@@ -273,13 +418,12 @@ function DetailGrid({ title, rows }: { title: string; rows: Array<[string, strin
   );
 }
 
-export function ListingsExplorer({ initialData, isLoading = false }: Props) {
+export function ListingsExplorer({ initialData, isLoading = false, loadError = null }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>("search");
   const [selectedProvince, setSelectedProvince] = useState<string>("all");
   const [selectedDistrict, setSelectedDistrict] = useState<string>("all");
-  const [selectedSource, setSelectedSource] = useState<string>("all");
   const [selectedRoomType, setSelectedRoomType] = useState<string>("all");
-  const [selectedPrecision, setSelectedPrecision] = useState<string>("all");
+  const [selectedAmenities, setSelectedAmenities] = useState<AmenityKey[]>([]);
   const [hasImageOnly, setHasImageOnly] = useState(false);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -288,19 +432,36 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
   const [sortBy, setSortBy] = useState<(typeof SORT_OPTIONS)[number]["value"]>("recommended");
   const [searchText, setSearchText] = useState("");
   const [resultLimit, setResultLimit] = useState(RESULT_BATCH_SIZE);
-  const [mapMarkerLimit, setMapMarkerLimit] = useState(INITIAL_MAP_MARKER_LIMIT);
   const [selectedListingId, setSelectedListingId] = useState<string | null>(initialData.items[0]?.id ?? null);
-  const deferredSearch = useDeferredValue(searchText);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailedListing, setDetailedListing] = useState<Listing | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [mapRenderStats, setMapRenderStats] = useState({ markers: 0, listings: 0 });
+  const handleMapRenderStats = useCallback((markers: number, listings: number) => {
+    setMapRenderStats((current) =>
+      current.markers === markers && current.listings === listings ? current : { markers, listings }
+    );
+  }, []);
 
-  const sourceTotals = useMemo(() => countBy(initialData.items, (item) => item.source_name), [initialData.items]);
-  const sources = useMemo(() => Object.keys(sourceTotals).sort(), [sourceTotals]);
+  const priceOutlierCount = useMemo(
+    () => initialData.items.filter((item) => (item.price_value ?? 0) > MAX_REASONABLE_MONTHLY_PRICE).length,
+    [initialData.items]
+  );
+  const extremePriceOutlierCount = useMemo(
+    () => initialData.items.filter((item) => (item.price_value ?? 0) >= 1_000_000_000).length,
+    [initialData.items]
+  );
   const roomTypes = useMemo(
     () => Array.from(new Set(initialData.items.map((item) => item.room_type).filter(Boolean) as string[])).sort(),
     [initialData.items]
   );
   const districts = useMemo(() => {
+    if (selectedProvince === "all") {
+      return [];
+    }
     const provinceFiltered = initialData.items.filter(
-      (item) => selectedProvince === "all" || item.province === selectedProvince
+      (item) => canonicalProvince(item.province) === selectedProvince
     );
     return Array.from(new Set(provinceFiltered.map((item) => item.district).filter(Boolean) as string[])).sort(
       (a, b) => formatDistrict(a).localeCompare(formatDistrict(b), "vi")
@@ -312,107 +473,195 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
   const parsedMinArea = minArea ? Number(minArea) : null;
   const parsedMaxArea = maxArea ? Number(maxArea) : null;
 
-  const keyword = deferredSearch.trim().toLowerCase();
-  const visibleItems = initialData.items
-    .filter((item) => {
-      const matchesProvince = selectedProvince === "all" || item.province === selectedProvince;
-      const matchesDistrict = selectedDistrict === "all" || item.district === selectedDistrict;
-      const matchesSource = selectedSource === "all" || item.source_name === selectedSource;
-      const matchesRoomType = selectedRoomType === "all" || item.room_type === selectedRoomType;
-      const matchesPrecision = selectedPrecision === "all" || item.geocode_precision === selectedPrecision;
-      const matchesImage = !hasImageOnly || Boolean(imageUrl(item));
-      const matchesMinPrice = parsedMinPrice === null || (item.price_value !== null && item.price_value >= parsedMinPrice);
-      const matchesMaxPrice = parsedMaxPrice === null || (item.price_value !== null && item.price_value <= parsedMaxPrice);
-      const matchesMinArea = parsedMinArea === null || (item.area_m2 !== null && item.area_m2 >= parsedMinArea);
-      const matchesMaxArea = parsedMaxArea === null || (item.area_m2 !== null && item.area_m2 <= parsedMaxArea);
-      const haystack = `${item.title} ${item.full_address ?? ""} ${item.district ?? ""} ${item.ward ?? ""} ${item.room_type ?? ""} ${item.source_name}`.toLowerCase();
-      const matchesKeyword = !keyword || haystack.includes(keyword);
-      return (
-        matchesProvince &&
-        matchesDistrict &&
-        matchesSource &&
-        matchesRoomType &&
-        matchesPrecision &&
-        matchesImage &&
-        matchesMinPrice &&
-        matchesMaxPrice &&
-        matchesMinArea &&
-        matchesMaxArea &&
-        matchesKeyword
-      );
-    })
-    .sort((a, b) => {
-      if (sortBy === "price_asc") {
-        return (a.price_value ?? Number.MAX_SAFE_INTEGER) - (b.price_value ?? Number.MAX_SAFE_INTEGER);
-      }
-      if (sortBy === "price_desc") {
-        return (b.price_value ?? 0) - (a.price_value ?? 0);
-      }
-      if (sortBy === "area_desc") {
-        return (b.area_m2 ?? 0) - (a.area_m2 ?? 0);
-      }
-      if (sortBy === "score_desc") {
-        return (b.record_completeness_score ?? 0) - (a.record_completeness_score ?? 0);
-      }
-      return (b.record_completeness_score ?? 0) - (a.record_completeness_score ?? 0) || (b.image_count ?? 0) - (a.image_count ?? 0);
-    });
+  const visibleItems = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    return initialData.items
+      .filter((item) => {
+        const matchesProvince = selectedProvince === "all" || canonicalProvince(item.province) === selectedProvince;
+        const matchesDistrict = selectedDistrict === "all" || item.district === selectedDistrict;
+        const matchesRoomType = selectedRoomType === "all" || item.room_type === selectedRoomType;
+        const matchesAmenities = selectedAmenities.every((amenity) => Boolean(item[amenity]));
+        const matchesImage = !hasImageOnly || Boolean(imageUrl(item));
+        const matchesReasonablePrice = item.price_value === null || item.price_value <= MAX_REASONABLE_MONTHLY_PRICE;
+        const matchesMinPrice = parsedMinPrice === null || (item.price_value !== null && item.price_value >= parsedMinPrice);
+        const matchesMaxPrice = parsedMaxPrice === null || (item.price_value !== null && item.price_value <= parsedMaxPrice);
+        const matchesMinArea = parsedMinArea === null || (item.area_m2 !== null && item.area_m2 >= parsedMinArea);
+        const matchesMaxArea = parsedMaxArea === null || (item.area_m2 !== null && item.area_m2 <= parsedMaxArea);
+        const haystack = `${item.title} ${item.full_address ?? ""} ${item.street_address ?? ""} ${item.district ?? ""} ${item.ward ?? ""} ${item.room_type ?? ""}`.toLowerCase();
+        const matchesKeyword = !keyword || haystack.includes(keyword);
+        return (
+          matchesProvince &&
+          matchesDistrict &&
+          matchesRoomType &&
+          matchesAmenities &&
+          matchesImage &&
+          matchesReasonablePrice &&
+          matchesMinPrice &&
+          matchesMaxPrice &&
+          matchesMinArea &&
+          matchesMaxArea &&
+          matchesKeyword
+        );
+      })
+      .sort((a, b) => {
+        if (sortBy === "price_asc") {
+          return (a.price_value ?? Number.MAX_SAFE_INTEGER) - (b.price_value ?? Number.MAX_SAFE_INTEGER);
+        }
+        if (sortBy === "price_desc") {
+          return (b.price_value ?? 0) - (a.price_value ?? 0);
+        }
+        if (sortBy === "area_desc") {
+          return (b.area_m2 ?? 0) - (a.area_m2 ?? 0);
+        }
+        return (b.record_completeness_score ?? 0) - (a.record_completeness_score ?? 0) || (b.image_count ?? 0) - (a.image_count ?? 0);
+      });
+  }, [
+    hasImageOnly,
+    initialData.items,
+    parsedMaxArea,
+    parsedMaxPrice,
+    parsedMinArea,
+    parsedMinPrice,
+    selectedAmenities,
+    selectedDistrict,
+    selectedProvince,
+    selectedRoomType,
+    searchText,
+    sortBy
+  ]);
 
-  const selectedListing = visibleItems.find((item) => item.id === selectedListingId) ?? visibleItems[0] ?? null;
+  const selectedListingBase = visibleItems.find((item) => item.id === selectedListingId) ?? visibleItems[0] ?? null;
+  const selectedListing = detailedListing?.id === selectedListingBase?.id ? detailedListing : selectedListingBase;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedListingBase) {
+      setDetailedListing(null);
+      return;
+    }
+    setDetailLoading(true);
+    fetchListingDetails(selectedListingBase)
+      .then((listing) => {
+        if (!cancelled) {
+          setDetailedListing(listing);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDetailLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedListingBase]);
   const selectedImage = imageUrl(selectedListing);
   const displayedItems = visibleItems.slice(0, resultLimit);
-  const mapItems = visibleItems.filter((item) => item.latitude && item.longitude).slice(0, mapMarkerLimit);
-  const markerCount = visibleItems.filter((item) => item.latitude && item.longitude).length;
+  const selectedFocusCoordinate: [number, number] | null =
+    selectedListing && selectedListing.latitude !== null && selectedListing.longitude !== null
+      ? [selectedListing.latitude, selectedListing.longitude]
+      : null;
+  const mapGroups = useMemo(() => buildMapLocationGroups(visibleItems), [visibleItems]);
+  const mapLevelCounts = useMemo(() => locationLevelCounts(mapGroups), [mapGroups]);
+  const mapGroupByListingId = useMemo(() => {
+    const lookup = new Map<string, (typeof mapGroups)[number]>();
+    for (const group of mapGroups) {
+      for (const listingId of group.listingIds) {
+        lookup.set(listingId, group);
+      }
+    }
+    return lookup;
+  }, [mapGroups]);
+  const selectedMapGroup = selectedListing ? mapGroupByListingId.get(selectedListing.id) ?? null : null;
+  const markerCount = mapGroups.length;
+  const locatedListingCount = Object.values(mapLevelCounts).reduce((total, count) => total + count, 0);
   const imageCount = visibleItems.filter((item) => imageUrl(item)).length;
-  const exactCount = visibleItems.filter((item) => item.geocode_precision === "exact").length;
-  const referenceCount = visibleItems.filter((item) => item.geocode_precision === "district" || item.geocode_precision === "province").length;
   const priceValues = visibleItems.map((item) => item.price_value).filter((value): value is number => Boolean(value && value > 1000));
   const areaValues = visibleItems.map((item) => item.area_m2).filter((value): value is number => Boolean(value && value > 0));
   const avgPrice = average(priceValues);
   const medianPrice = median(priceValues);
   const avgArea = average(areaValues);
-  const avgScore = average(
-    visibleItems
-      .map((item) => item.record_completeness_score)
-      .filter((value): value is number => value !== null && value !== undefined)
-  );
   const sourceChart = topChartItems(countBy(visibleItems, (item) => item.source_name), 5, sourceLabel);
   const roomChart = topChartItems(countBy(visibleItems, (item) => item.room_type ?? "khac"), 6, roomTypeLabel);
-  const provinceChart = topChartItems(countBy(visibleItems, (item) => item.province), 8);
+  const provinceChart = topChartItems(countBy(visibleItems, (item) => canonicalProvince(item.province)), 8);
   const districtChart = topChartItems(countBy(visibleItems, (item) => item.district), 10, formatDistrict);
   const priceChart = bucketCounts(visibleItems, PRICE_BUCKETS, (item) => item.price_value);
   const areaChart = bucketCounts(visibleItems, AREA_BUCKETS, (item) => item.area_m2);
-  const precisionChart = [
-    { label: "Sát địa chỉ", value: exactCount },
-    { label: "Tâm điểm quận", value: visibleItems.filter((item) => item.geocode_precision === "district").length },
-    { label: "Tâm điểm tỉnh", value: visibleItems.filter((item) => item.geocode_precision === "province").length },
-    { label: "Chưa định vị", value: visibleItems.filter((item) => !item.latitude || !item.longitude).length }
-  ];
   const topDistrict = districtChart[0]?.label ?? "Chưa có";
   const amenityChart = AMENITY_FLAGS.map((flag) => ({
     label: flag.label,
     value: visibleItems.filter((item) => Boolean(item[flag.key])).length
   })).sort((a, b) => b.value - a.value);
+  const amenityRadarData = amenityChart.slice(0, 8).map((item) => ({
+    label: item.label,
+    coverage: visibleItems.length ? Number(((item.value / visibleItems.length) * 100).toFixed(1)) : 0
+  }));
+  const scatterData = visibleItems
+    .filter(
+      (item) =>
+        item.area_m2 !== null &&
+        item.area_m2 > 0 &&
+        item.area_m2 <= 150 &&
+        item.price_value !== null &&
+        item.price_value >= 500_000 &&
+        item.price_value <= 30_000_000
+    )
+    .slice(0, 700)
+    .map((item) => ({
+      area: item.area_m2,
+      price: Number(((item.price_value ?? 0) / 1_000_000).toFixed(2)),
+      title: cleanDisplayText(item.title)
+    }));
+  const provinceStoryData = provinceChart.map((province) => {
+    const matchingItems = visibleItems.filter((item) => canonicalProvince(item.province) === province.label);
+    const provincePrices = matchingItems
+      .map((item) => item.price_value)
+      .filter((value): value is number => Boolean(value && value > 1000));
+    return {
+      label: province.label,
+      value: province.value,
+      averagePrice: Number((((average(provincePrices) ?? 0) / 1_000_000)).toFixed(1))
+    };
+  });
   const imageCoverage = visibleItems.length ? (imageCount / visibleItems.length) * 100 : 0;
-  const markerCoverage = visibleItems.length ? (markerCount / visibleItems.length) * 100 : 0;
+  const markerCoverage = visibleItems.length ? (locatedListingCount / visibleItems.length) * 100 : 0;
+  const statusChart = [
+    { label: "Đang hoạt động", value: visibleItems.filter((item) => item.status === "active").length },
+    { label: "Dữ liệu lịch sử", value: visibleItems.filter((item) => item.status === "expired").length },
+    { label: "Đã ẩn", value: visibleItems.filter((item) => item.status === "hidden").length }
+  ].filter((item) => item.value > 0);
+  const geocodeChart = (["exact", "street", "district", "province"] as MapLocationLevel[]).map((level) => ({
+    label: MAP_LOCATION_LABELS[level],
+    value: mapLevelCounts[level]
+  }));
   const hasActiveFilters =
     selectedProvince !== "all" ||
     selectedDistrict !== "all" ||
-    selectedSource !== "all" ||
     selectedRoomType !== "all" ||
-    selectedPrecision !== "all" ||
+    selectedAmenities.length > 0 ||
     hasImageOnly ||
     minPrice ||
     maxPrice ||
     minArea ||
     maxArea ||
     searchText;
+  const activeFilterCount = [
+    selectedProvince !== "all",
+    selectedDistrict !== "all",
+    selectedRoomType !== "all",
+    hasImageOnly,
+    Boolean(minPrice),
+    Boolean(maxPrice),
+    Boolean(minArea),
+    Boolean(maxArea),
+    Boolean(searchText)
+  ].filter(Boolean).length + selectedAmenities.length;
 
   function resetFilters() {
     setSelectedProvince("all");
     setSelectedDistrict("all");
-    setSelectedSource("all");
     setSelectedRoomType("all");
-    setSelectedPrecision("all");
+    setSelectedAmenities([]);
     setHasImageOnly(false);
     setMinPrice("");
     setMaxPrice("");
@@ -421,64 +670,74 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
     setSearchText("");
     setSortBy("recommended");
     setResultLimit(RESULT_BATCH_SIZE);
-    setMapMarkerLimit(INITIAL_MAP_MARKER_LIMIT);
+  }
+
+  function toggleAmenity(key: AmenityKey) {
+    setSelectedAmenities((current) =>
+      current.includes(key) ? current.filter((amenity) => amenity !== key) : [...current, key]
+    );
+  }
+
+  function selectListing(listingId: string) {
+    setSelectedListingId(listingId);
+    setDetailOpen(true);
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell view-${activeTab}`}>
       <header className="app-header">
         <div className="brand-block">
-          <span className="brand-mark" aria-hidden>PT</span>
+          <span className="brand-mark" aria-hidden><Building2 size={22} strokeWidth={1.9} /></span>
           <div>
             <p>PhongTrọ Intelligence</p>
-            <h1>Nền tảng bản đồ phòng trọ</h1>
+            <h1>Rental data observatory</h1>
           </div>
         </div>
 
         <nav className="tab-nav" aria-label="Chuyển chế độ xem">
-          <button className={activeTab === "search" ? "active" : ""} type="button" onClick={() => setActiveTab("search")}>
-            Tìm phòng
+          <button className={activeTab === "search" ? "active" : ""} type="button" aria-pressed={activeTab === "search"} onClick={() => setActiveTab("search")}>
+            <MapPinned size={17} strokeWidth={1.9} aria-hidden />
+            <span className="tab-label-full">Bản đồ dữ liệu</span><span className="tab-label-short">Bản đồ</span>
           </button>
-          <button className={activeTab === "dashboard" ? "active" : ""} type="button" onClick={() => setActiveTab("dashboard")}>
-            Dashboard phân tích
+          <button className={activeTab === "dashboard" ? "active" : ""} type="button" aria-pressed={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")}>
+            <BarChart3 size={17} strokeWidth={1.9} aria-hidden />
+            <span className="tab-label-full">Phân tích dữ liệu</span><span className="tab-label-short">Phân tích</span>
+          </button>
+          <button className={activeTab === "monitor" ? "active" : ""} type="button" aria-pressed={activeTab === "monitor"} onClick={() => setActiveTab("monitor")}>
+            <Workflow size={17} strokeWidth={1.9} aria-hidden />
+            <span className="tab-label-full">Tiến trình ETL</span><span className="tab-label-short">ETL</span>
           </button>
         </nav>
 
         <div className="header-metrics" aria-label="Tổng quan nhanh">
           <div>
-            <span>Kho tin</span>
+            <Database className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
+             <span>Snapshot</span>
             <strong>{initialData.total.toLocaleString("vi-VN")}</strong>
           </div>
           <div>
-            <span>Đang xem</span>
+            <SlidersHorizontal className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
+             <span>Trong lát cắt</span>
             <strong>{visibleItems.length.toLocaleString("vi-VN")}</strong>
           </div>
           <div>
-            <span>Có ảnh</span>
+            <ImageIcon className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
+             <span>Ảnh hợp lệ</span>
             <strong>{imageCount.toLocaleString("vi-VN")}</strong>
           </div>
           <div>
-            <span>Điểm bản đồ</span>
+            <MapPinned className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
+             <span>Cụm vị trí</span>
             <strong>{markerCount.toLocaleString("vi-VN")}</strong>
           </div>
         </div>
       </header>
 
-      <section className="filter-strip" aria-label="Bộ lọc dữ liệu">
-        <label className="search-field">
-          <span>Tìm kiếm</span>
-          <input
-            type="search"
-            placeholder="Tên đường, quận, tiêu đề"
-            value={searchText}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              startTransition(() => setSearchText(nextValue));
-            }}
-          />
-        </label>
+      {activeTab !== "monitor" ? <section className={`filter-strip ${filtersExpanded ? "expanded" : ""}`} aria-label="Bộ lọc dữ liệu">
+        <div className="filter-primary">
+          <DebouncedSearchField value={searchText} onDebouncedChange={setSearchText} />
 
-        <label className="select-field">
+          <label className="select-field province-field">
           <span>Tỉnh thành</span>
           <select
             value={selectedProvince}
@@ -490,40 +749,32 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
               });
             }}
           >
-            <option value="all">Tất cả</option>
-            {initialData.available_provinces.map((province) => (
+            <option value="all">Tất cả tỉnh thành</option>
+            {CURRENT_PROVINCES.map((province) => (
               <option key={province} value={province}>
                 {province}
               </option>
             ))}
           </select>
-        </label>
+          </label>
 
-        <label className="select-field">
+          <label className="select-field district-field">
           <span>Quận huyện</span>
-          <select value={selectedDistrict} onChange={(event) => startTransition(() => setSelectedDistrict(event.target.value))}>
-            <option value="all">Tất cả khu vực</option>
+          <select
+            value={selectedDistrict}
+            disabled={selectedProvince === "all"}
+            onChange={(event) => startTransition(() => setSelectedDistrict(event.target.value))}
+          >
+            <option value="all">{selectedProvince === "all" ? "Chọn tỉnh thành trước" : "Tất cả quận huyện"}</option>
             {districts.map((district) => (
               <option key={district} value={district}>
                 {formatDistrict(district)}
               </option>
             ))}
           </select>
-        </label>
+          </label>
 
-        <label className="select-field">
-          <span>Nguồn</span>
-          <select value={selectedSource} onChange={(event) => startTransition(() => setSelectedSource(event.target.value))}>
-            <option value="all">Tất cả nguồn</option>
-            {sources.map((source) => (
-              <option key={source} value={source}>
-                {sourceLabel(source)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="select-field">
+          <label className="select-field room-field">
           <span>Loại phòng</span>
           <select value={selectedRoomType} onChange={(event) => startTransition(() => setSelectedRoomType(event.target.value))}>
             <option value="all">Tất cả loại phòng</option>
@@ -533,17 +784,26 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
               </option>
             ))}
           </select>
-        </label>
+          </label>
 
-        <label className="select-field">
-          <span>Định vị</span>
-          <select value={selectedPrecision} onChange={(event) => startTransition(() => setSelectedPrecision(event.target.value))}>
-            <option value="all">Tất cả tọa độ</option>
-            <option value="exact">Sát địa chỉ</option>
-            <option value="district">Tâm điểm cấp quận</option>
-            <option value="province">Tâm điểm cấp tỉnh</option>
-          </select>
-        </label>
+          <button
+            className={`filter-toggle-button ${filtersExpanded ? "active" : ""}`}
+            type="button"
+            aria-expanded={filtersExpanded}
+            onClick={() => setFiltersExpanded((current) => !current)}
+          >
+            <Filter size={17} strokeWidth={1.9} aria-hidden />
+            Bộ lọc
+            {activeFilterCount ? <span>{activeFilterCount}</span> : null}
+          </button>
+
+          <button className="reset-filter-button" type="button" onClick={resetFilters} disabled={!hasActiveFilters}>
+            <RotateCcw size={16} strokeWidth={1.9} aria-hidden />
+            <span>Xóa lọc</span>
+          </button>
+        </div>
+
+        <div className="filter-secondary">
 
         <label className="number-field">
           <span>Giá từ</span>
@@ -576,21 +836,42 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
           </select>
         </label>
 
-        <div className="filter-actions">
+          <div className="filter-actions">
           <label className="toggle-field">
             <input type="checkbox" checked={hasImageOnly} onChange={(event) => setHasImageOnly(event.target.checked)} />
             <span>Có ảnh</span>
           </label>
-          <button type="button" onClick={resetFilters} disabled={!hasActiveFilters}>
-            Xóa lọc
-          </button>
+          </div>
         </div>
-      </section>
+
+        <fieldset className="amenity-filter-field">
+          <legend>Tiện ích cần có</legend>
+          <div className="amenity-filter-options">
+            {AMENITY_FLAGS.map((flag) => (
+              <label className={selectedAmenities.includes(flag.key) ? "selected" : ""} key={flag.key}>
+                <input
+                  type="checkbox"
+                  checked={selectedAmenities.includes(flag.key)}
+                  onChange={() => toggleAmenity(flag.key)}
+                />
+                <span>{flag.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </section> : null}
 
       {isLoading ? (
         <section className="loading-banner" aria-live="polite">
-          <strong>Đang tải toàn bộ dữ liệu phòng trọ</strong>
-          <span>Hệ thống đang ghép manifest và 12 chunk JSON, có thể mất vài giây vì dataset hơn 56 nghìn tin.</span>
+          <strong>Đang dựng snapshot ETL</strong>
+          <span>Hệ thống đang ghép các index dữ liệu và chuẩn bị lớp bản đồ.</span>
+        </section>
+      ) : null}
+
+      {loadError ? (
+        <section className="loading-banner error-banner" role="alert">
+          <strong>Không tải được dữ liệu</strong>
+          <span>{loadError}</span>
         </section>
       ) : null}
 
@@ -599,25 +880,10 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
           <aside className="results-panel" aria-label="Danh sách phòng trọ">
             <div className="panel-head">
               <div>
-                <p>Kết quả</p>
-                <h2>{visibleItems.length.toLocaleString("vi-VN")} phòng trọ</h2>
+                <p>Kho dữ liệu</p>
+                <h2>{visibleItems.length.toLocaleString("vi-VN")} bản ghi</h2>
               </div>
               <span>{markerCount.toLocaleString("vi-VN")} điểm</span>
-            </div>
-
-            <div className="source-pills" aria-label="Nguồn dữ liệu">
-              {sources.map((source) => (
-                <button
-                  key={source}
-                  type="button"
-                  className={`source-pill source-${source} ${selectedSource === source ? "active" : ""}`}
-                  onClick={() => setSelectedSource(selectedSource === source ? "all" : source)}
-                >
-                  <i />
-                  {sourceLabel(source)}
-                  <strong>{sourceTotals[source].toLocaleString("vi-VN")}</strong>
-                </button>
-              ))}
             </div>
 
             <div className="listing-list">
@@ -625,7 +891,16 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
                 <article
                   key={item.id}
                   className={`listing-card source-border-${item.source_name} ${item.id === selectedListing?.id ? "selected" : ""}`}
-                  onClick={() => setSelectedListingId(item.id)}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={item.id === selectedListing?.id}
+                  onClick={() => selectListing(item.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      selectListing(item.id);
+                    }
+                  }}
                 >
                   <div className="listing-thumb">
                     {imageUrl(item) ? <img src={imageUrl(item) ?? ""} alt={cleanDisplayText(item.title)} loading="lazy" /> : <span>Chưa có ảnh</span>}
@@ -640,11 +915,11 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
                     <div className="listing-tags">
                       <span>{formatArea(item.area_m2)}</span>
                       <span>{roomTypeLabel(item.room_type)}</span>
-                      <span>{formatPrecision(item.geocode_precision)}</span>
+                      <span>{mapLocationLabel(item, mapGroupByListingId.get(item.id)?.level)}</span>
                     </div>
                     <div className="listing-footer">
                       <strong>{formatCurrency(item.price_value)}</strong>
-                      <span>{item.image_count} ảnh</span>
+                      <span>{item.status === "active" ? "Còn hiệu lực" : "Dữ liệu lịch sử"}</span>
                     </div>
                   </div>
                 </article>
@@ -661,6 +936,7 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
                   type="button"
                   onClick={() => setResultLimit((current) => current + RESULT_BATCH_SIZE)}
                 >
+                  <ChevronDown size={17} strokeWidth={1.9} aria-hidden />
                   Tải thêm {Math.min(RESULT_BATCH_SIZE, visibleItems.length - displayedItems.length).toLocaleString("vi-VN")} tin
                 </button>
               ) : null}
@@ -670,39 +946,59 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
           <section className="map-workspace">
             <div className="map-toolbar">
               <div>
-                <p>Bản đồ phòng trọ</p>
+                <p>Không gian địa lý</p>
                 <h2>{selectedListing ? formatDistrict(selectedListing.district) : "Chọn một tin để xem chi tiết"}</h2>
               </div>
               <div className="toolbar-facts">
-                <span>Đang vẽ {mapItems.length.toLocaleString("vi-VN")} / {markerCount.toLocaleString("vi-VN")} marker</span>
-                <span>{exactCount.toLocaleString("vi-VN")} tọa độ sát địa chỉ</span>
-                <span>{referenceCount.toLocaleString("vi-VN")} tọa độ tham chiếu</span>
-                {markerCount > mapItems.length ? (
-                  <button
-                    className="marker-more-button"
-                    type="button"
-                    onClick={() => setMapMarkerLimit((current) => current + MAP_MARKER_BATCH_SIZE)}
-                  >
-                    Vẽ thêm marker
+                <span>
+                  Đang vẽ {mapRenderStats.markers.toLocaleString("vi-VN")} / {markerCount.toLocaleString("vi-VN")} vị trí trong khung nhìn,
+                  đại diện {mapRenderStats.listings.toLocaleString("vi-VN")} tin
+                </span>
+                <span>
+                  {mapLevelCounts.exact.toLocaleString("vi-VN")} địa chỉ, {mapLevelCounts.street.toLocaleString("vi-VN")} theo đường,{" "}
+                  {mapLevelCounts.district.toLocaleString("vi-VN")} theo quận
+                </span>
+                {!detailOpen && selectedListing ? (
+                  <button className="open-detail-button" type="button" onClick={() => setDetailOpen(true)}>
+                    <PanelRightOpen size={15} strokeWidth={1.9} aria-hidden />
+                    Xem bản ghi
                   </button>
                 ) : null}
               </div>
             </div>
 
             <div className="map-stage">
-              <ListingsMap listings={mapItems} selectedListingId={selectedListing?.id ?? null} onSelectListing={setSelectedListingId} />
+              <ListingsMap
+                groups={mapGroups}
+                selectedListingId={selectedListing?.id ?? null}
+                focusCoordinate={selectedFocusCoordinate}
+                onSelectListing={selectListing}
+                onRenderStats={handleMapRenderStats}
+              />
+              {selectedListing && (!selectedMapGroup || selectedMapGroup.level !== "exact") ? (
+                <div className="map-quality-notice" role="status">
+                  <MapPinOff size={16} strokeWidth={1.9} aria-hidden />
+                  {!selectedMapGroup
+                    ? "Tin đang chọn chưa có đủ dữ liệu để đặt lên bản đồ."
+                    : selectedMapGroup.level === "street"
+                      ? "Tin này chỉ xác định được tuyến đường; vùng nét đứt thể hiện phạm vi ước lượng, không phải số nhà chính xác."
+                      : selectedMapGroup.level === "district"
+                        ? "Tin này chỉ có tọa độ cấp quận; vùng nét đứt thể hiện phạm vi ước lượng quanh trung tâm quận huyện."
+                        : "Tin này chỉ có tọa độ cấp tỉnh; vùng nét đứt thể hiện phạm vi ước lượng quanh trung tâm tỉnh thành."}
+                </div>
+              ) : null}
               <div className="map-legend" aria-label="Chú giải bản đồ">
-                {sources.map((source) => (
-                  <span key={source} className={`source-${source}`}>
+                {(["exact", "street", "district", "province"] as MapLocationLevel[]).map((level) => (
+                  <span key={level} className={`location-${level}`}>
                     <i />
-                    {sourceLabel(source)}
+                    {MAP_LOCATION_LABELS[level]}
                   </span>
                 ))}
               </div>
             </div>
           </section>
 
-          <aside className="preview-panel" aria-label="Xem nhanh tin đang chọn">
+          <aside className={`preview-panel ${detailOpen ? "open" : "closed"}`} aria-label="Xem nhanh tin đang chọn" aria-hidden={!detailOpen}>
             {selectedListing ? (
               <>
                 <div className={`preview-media ${selectedImage ? "" : "image-empty"}`}>
@@ -723,10 +1019,54 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
                 </div>
 
                 <div className="preview-content">
-                  <p className="preview-kicker">Tin đang chọn</p>
+                  <div className="preview-heading-row">
+                    <p className="preview-kicker">Bản ghi đang chọn</p>
+                    <button className="close-detail-button" type="button" aria-label="Đóng chi tiết" onClick={() => setDetailOpen(false)}>
+                      <X size={18} strokeWidth={1.9} aria-hidden />
+                    </button>
+                  </div>
                   <h2>{cleanDisplayText(selectedListing.title)}</h2>
                   <strong className="preview-price">{formatCurrency(selectedListing.price_value)}</strong>
                   <p className="preview-address">{cleanDisplayText(selectedListing.full_address) || "Địa chỉ đang được chuẩn hóa"}</p>
+
+                  {detailLoading ? <div className="detail-loading" role="status">Đang tải chi tiết bản ghi</div> : null}
+
+                  <section className="preview-contact" aria-label="Thông tin người đăng">
+                    <div>
+                      <span>Người đăng</span>
+                      <strong>{selectedListing.contact_name || "Chưa công khai"}</strong>
+                    </div>
+                    <div>
+                      <span>Điện thoại</span>
+                      {phoneUrl(selectedListing.contact_phone) ? (
+                        <a href={phoneUrl(selectedListing.contact_phone) ?? undefined}>{selectedListing.contact_phone}</a>
+                      ) : (
+                        <strong>Chưa công khai</strong>
+                      )}
+                    </div>
+                    <div className="contact-links">
+                      {phoneUrl(selectedListing.contact_phone) ? (
+                        <a href={phoneUrl(selectedListing.contact_phone) ?? undefined} aria-label="Gọi cho người đăng">
+                          <Phone size={15} strokeWidth={1.9} aria-hidden /> Gọi
+                        </a>
+                      ) : null}
+                      {selectedListing.contact_zalo_url ? (
+                        <a href={selectedListing.contact_zalo_url} target="_blank" rel="noreferrer">
+                          <MessageCircle size={15} strokeWidth={1.9} aria-hidden /> Zalo
+                        </a>
+                      ) : null}
+                      {selectedListing.contact_facebook_url ? (
+                        <a href={selectedListing.contact_facebook_url} target="_blank" rel="noreferrer">
+                          <Link2 size={15} strokeWidth={1.9} aria-hidden /> Facebook
+                        </a>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className="detail-section description-section">
+                    <h3>Mô tả tin</h3>
+                    <p className="description-text">{cleanDescriptionText(selectedListing.description_clean) || "Chưa có mô tả"}</p>
+                  </section>
 
                   <div className="preview-facts">
                     <div>
@@ -743,108 +1083,73 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
                     </div>
                     <div>
                       <span>Định vị</span>
-                      <strong>{formatPrecision(selectedListing.geocode_precision)}</strong>
+                      <strong>{mapLocationLabel(selectedListing, selectedMapGroup?.level)}</strong>
                     </div>
                   </div>
 
-                  <div className="preview-tags">
-                    <span>{selectedListing.image_count} ảnh</span>
-                    <span>{selectedListing.amenity_count} tiện ích</span>
-                    <span>{selectedListing.record_completeness_score ?? 0}/100 độ đầy đủ</span>
-                  </div>
-
                   <DetailGrid
-                    title="Thông tin giá và diện tích"
+                    title="Khu vực"
                     rows={[
-                      ["Giá gốc", selectedListing.price_text],
-                      ["Giá chuẩn hóa", formatCurrency(selectedListing.price_value)],
-                      ["Giá mỗi m2", selectedListing.price_per_m2 ? `${selectedListing.price_per_m2.toLocaleString("vi-VN")} VND/m2` : null],
-                      ["Diện tích gốc", selectedListing.area_text],
-                      ["Diện tích chuẩn hóa", formatArea(selectedListing.area_m2)],
-                      ["Trạng thái", selectedListing.status]
-                    ]}
-                  />
-
-                  <DetailGrid
-                    title="Địa chỉ và tọa độ"
-                    rows={[
-                      ["Tỉnh thành", selectedListing.province],
+                      ["Tỉnh thành", canonicalProvince(selectedListing.province) ?? selectedListing.province],
                       ["Quận huyện", formatDistrict(selectedListing.district)],
                       ["Phường xã", selectedListing.ward],
-                      ["Đường", selectedListing.street_address],
-                      ["Địa chỉ map", selectedListing.map_reference_address],
-                      ["Latitude", selectedListing.latitude],
-                      ["Longitude", selectedListing.longitude],
-                      ["Nguồn geocode", selectedListing.geocode_source],
-                      ["Tên geocode", selectedListing.geocode_display_name],
-                      ["Điểm địa chỉ", selectedListing.address_quality_score],
-                      ["Tọa độ tham chiếu", selectedListing.is_reference_coordinate]
+                      ["Đường", selectedListing.street_address]
                     ]}
                   />
 
-                  <DetailGrid
-                    title="Liên hệ và thời gian"
-                    rows={[
-                      ["Người đăng", selectedListing.contact_name],
-                      ["Điện thoại", selectedListing.contact_phone],
-                      ["Zalo", selectedListing.contact_zalo_url],
-                      ["Facebook", selectedListing.contact_facebook_url],
-                      ["Ngày đăng", selectedListing.posted_at],
-                      ["Ngày hết hạn", selectedListing.expired_at],
-                      ["Độ mới", selectedListing.freshness_days ? `${selectedListing.freshness_days} ngày` : null],
-                      ["Mã nguồn", selectedListing.source_post_id],
-                      ["Hash nội dung", selectedListing.content_hash]
-                    ]}
-                  />
+                  <p className="posted-date">Đăng ngày {formatDisplayDate(selectedListing.posted_at) || "chưa rõ"}</p>
 
                   <section className="detail-section">
-                    <h3>Tiện ích nhận diện</h3>
+                    <h3>Tiện ích</h3>
                     <div className="amenity-grid">
-                      {AMENITY_FLAGS.map((flag) => (
-                        <span className={selectedListing[flag.key] ? "active" : ""} key={flag.key}>
-                          {flag.label}: {selectedListing[flag.key] ? "Có" : "Không"}
+                      {AMENITY_FLAGS.filter((flag) => selectedListing[flag.key]).map((flag) => (
+                        <span className="active" key={flag.key}>
+                          {flag.label}
                         </span>
                       ))}
                     </div>
-                    <p>{selectedListing.amenities_text || "Chưa có chuỗi tiện ích gốc"}</p>
+                    {AMENITY_FLAGS.some((flag) => selectedListing[flag.key]) ? null : <p>Chưa có thông tin tiện ích.</p>}
                   </section>
 
-                  <section className="detail-section">
-                    <h3>Mô tả tin</h3>
-                    <p className="description-text">{cleanDisplayText(selectedListing.description_clean) || "Chưa có mô tả"}</p>
-                  </section>
-
-                  <a className="primary-link" href={selectedListing.canonical_url} target="_blank" rel="noreferrer">
-                    Mở tin gốc
-                  </a>
+                  <div className="preview-actions">
+                    <a className="secondary-link" href={googleMapsSearchUrl(selectedListing)} target="_blank" rel="noreferrer">
+                      <MapPinned size={17} strokeWidth={1.9} aria-hidden />
+                      Kiểm tra trên Google Maps
+                    </a>
+                    <a className="primary-link" href={selectedListing.canonical_url} target="_blank" rel="noreferrer">
+                      Mở tin gốc
+                      <ExternalLink size={17} strokeWidth={1.9} aria-hidden />
+                    </a>
+                  </div>
                 </div>
               </>
             ) : (
               <div className="empty-preview">
-                <strong>Chọn một tin để xem ảnh và chi tiết</strong>
-                <p>Bạn có thể bấm vào thẻ tin bên trái hoặc marker trên bản đồ.</p>
+                <strong>Chưa có bản ghi được chọn</strong>
+                <p>Chi tiết dữ liệu sẽ xuất hiện tại đây.</p>
               </div>
             )}
           </aside>
         </section>
-      ) : (
+      ) : activeTab === "dashboard" ? (
         <section className="dashboard-view" aria-label="Dashboard phân tích phòng trọ">
           <div className="dashboard-hero">
             <div>
-              <p>Dashboard phân tích</p>
-              <h2>Đọc nhanh thị trường phòng trọ theo bộ lọc hiện tại</h2>
+              <p>ETL intelligence</p>
+              <h2>Từ dữ liệu thô đến tín hiệu thị trường có thể kiểm chứng</h2>
+              <span className="dashboard-intro">Snapshot đa nguồn giữ nguyên vòng đời bản ghi để phục vụ phân tích lịch sử.</span>
             </div>
             <div className="dashboard-summary">
               <span>Khu vực nổi bật: {topDistrict}</span>
               <span>Giá trung vị: {formatShortCurrency(medianPrice)}</span>
-              <span>Độ đầy đủ TB: {avgScore ? `${avgScore.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}/100` : "Chưa có"}</span>
               <span>Bao phủ ảnh: {formatPercent(imageCoverage)}</span>
+              <span><Clock3 size={14} strokeWidth={1.9} aria-hidden /> {statusChart.find((item) => item.label === "Dữ liệu lịch sử")?.value.toLocaleString("vi-VN") ?? 0} bản ghi lịch sử</span>
             </div>
           </div>
 
           <div className="kpi-grid">
             <article className="kpi-card">
-              <span>Tin đang phân tích</span>
+              <span>Bản ghi phân tích</span>
               <strong>{visibleItems.length.toLocaleString("vi-VN")}</strong>
               <p>{formatPercent(initialData.total ? (visibleItems.length / initialData.total) * 100 : 0)} của snapshot online</p>
             </article>
@@ -864,115 +1169,226 @@ export function ListingsExplorer({ initialData, isLoading = false }: Props) {
               <p>{imageCount.toLocaleString("vi-VN")} tin có ảnh</p>
             </article>
             <article className="kpi-card">
-              <span>Tọa độ bản đồ</span>
+              <span>Bao phủ vị trí</span>
               <strong>{formatPercent(markerCoverage)}</strong>
-              <p>{exactCount.toLocaleString("vi-VN")} tin sát địa chỉ</p>
+              <p>
+                {locatedListingCount.toLocaleString("vi-VN")} tin quy về {markerCount.toLocaleString("vi-VN")} cụm
+              </p>
             </article>
           </div>
 
           <div className="dashboard-grid">
-            <article className="analytics-panel">
+            <article className="analytics-panel chart-span-7 data-story-panel">
               <div className="panel-title">
-                <h3>Tổng quan nguồn</h3>
-                <span>Donut chart</span>
+                <div>
+                  <span>Vòng đời dữ liệu</span>
+                  <h3>Snapshot gồm dữ liệu hiện hành và lịch sử</h3>
+                </div>
+                <strong>{visibleItems.length.toLocaleString("vi-VN")}</strong>
               </div>
-              <DonutChart items={sourceChart} total={visibleItems.length} />
-            </article>
-
-            <article className="analytics-panel">
-              <div className="panel-title">
-                <h3>Độ tin cậy tọa độ</h3>
-                <span>Donut chart</span>
-              </div>
-              <DonutChart items={precisionChart} total={visibleItems.length} />
-            </article>
-
-            <article className="analytics-panel wide-panel insight-panel">
-              <div className="panel-title">
-                <h3>Nhận định nhanh</h3>
-                <span>Tự tính từ dữ liệu lọc</span>
-              </div>
-              <div className="insight-list">
-                <p>
-                  Khu vực nhiều tin nhất là <strong>{topDistrict}</strong>, chiếm {districtChart[0] ? formatPercent((districtChart[0].value / Math.max(visibleItems.length, 1)) * 100) : "0%"} tập đang xem.
-                </p>
-                <p>
-                  Giá trung vị đang ở mức <strong>{formatShortCurrency(medianPrice)}</strong>, phù hợp để so sánh nhanh với giá trung bình {formatShortCurrency(avgPrice)}.
-                </p>
-                <p>
-                  Tỷ lệ tin có tọa độ là <strong>{formatPercent(markerCoverage)}</strong>; trong đó {exactCount.toLocaleString("vi-VN")} tin có tọa độ sát địa chỉ.
-                </p>
-                <p>
-                  Dữ liệu ảnh đạt <strong>{formatPercent(imageCoverage)}</strong>, giúp preview tin và kiểm tra chất lượng listing tốt hơn.
-                </p>
+              <div className="chart-canvas chart-canvas-compact">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={statusChart} layout="vertical" margin={{ top: 6, right: 24, left: 16, bottom: 2 }}>
+                    <CartesianGrid horizontal={false} stroke="rgba(80, 122, 171, 0.13)" />
+                    <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: "#607089", fontSize: 11 }} />
+                    <YAxis type="category" dataKey="label" width={112} tickLine={false} axisLine={false} tick={{ fill: "#31445f", fontSize: 11 }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Bar dataKey="value" name="Bản ghi" radius={[0, 7, 7, 0]} fill="#176bda" />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </article>
 
-            <article className="analytics-panel wide-panel">
+            <article className="analytics-panel chart-span-5 data-story-panel">
+              <div className="panel-title">
+                <div>
+                  <span>Độ chính xác không gian</span>
+                  <h3>Cấp định vị sau chuẩn hóa</h3>
+                </div>
+              </div>
+              <div className="chart-canvas chart-canvas-compact">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={geocodeChart} dataKey="value" nameKey="label" innerRadius={48} outerRadius={76} paddingAngle={2}>
+                      {geocodeChart.map((item, index) => <Cell key={item.label} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" wrapperStyle={{ fontSize: 11, color: "#607089" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </article>
+
+            <article className="analytics-panel chart-span-8">
               <div className="panel-title">
                 <h3>Phân bổ giá thuê</h3>
                 <span>{priceValues.length.toLocaleString("vi-VN")} tin có giá</span>
               </div>
-              <ChartList items={priceChart} total={visibleItems.length} />
+              <div className="chart-canvas chart-canvas-tall">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={priceChart} margin={{ top: 18, right: 18, left: 0, bottom: 4 }}>
+                    <CartesianGrid vertical={false} stroke="rgba(80, 122, 171, 0.16)" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} />
+                    <YAxis tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} width={54} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Area type="monotone" dataKey="value" name="Số tin" stroke="#2563eb" strokeWidth={3} fill="#8ec5ff" fillOpacity={0.34} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </article>
 
-            <article className="analytics-panel">
+            <article className="analytics-panel chart-span-4">
               <div className="panel-title">
-                <h3>Nguồn dữ liệu</h3>
-                <span>Theo bộ lọc</span>
+                <h3>Cơ cấu loại phòng</h3>
+                <span>{roomChart.length} nhóm</span>
               </div>
-              <ChartList items={sourceChart} total={visibleItems.length} />
+              <div className="chart-canvas chart-canvas-tall">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={roomChart} dataKey="value" nameKey="label" innerRadius={54} outerRadius={82} paddingAngle={2}>
+                      {roomChart.map((item, index) => <Cell key={item.label} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 11, color: "#5e6e83" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </article>
 
-            <article className="analytics-panel">
+            <article className="analytics-panel chart-span-6">
               <div className="panel-title">
-                <h3>Loại phòng</h3>
-                <span>Cơ cấu sản phẩm</span>
+                <h3>Giá theo diện tích</h3>
+                <span>Mẫu {scatterData.length.toLocaleString("vi-VN")} tin</span>
               </div>
-              <ChartList items={roomChart} total={visibleItems.length} />
+              <div className="chart-canvas">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 18, right: 24, left: 0, bottom: 8 }}>
+                    <CartesianGrid stroke="rgba(80, 122, 171, 0.16)" />
+                    <XAxis type="number" dataKey="area" name="Diện tích" unit=" m2" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} />
+                    <YAxis type="number" dataKey="price" name="Giá" unit=" tr" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} width={48} />
+                    <Tooltip cursor={{ strokeDasharray: "4 4" }} contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Scatter name="Phòng trọ" data={scatterData} fill="#0891b2" fillOpacity={0.48} />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
             </article>
 
-            <article className="analytics-panel">
+            <article className="analytics-panel chart-span-6">
               <div className="panel-title">
-                <h3>Diện tích</h3>
-                <span>Nhóm diện tích</span>
+                <h3>Dấu chân tiện ích</h3>
+                <span>Tỷ lệ bao phủ</span>
               </div>
-              <ChartList items={areaChart} total={visibleItems.length} />
+              <div className="chart-canvas">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={amenityRadarData} outerRadius="72%">
+                    <PolarGrid stroke="rgba(80, 122, 171, 0.2)" />
+                    <PolarAngleAxis dataKey="label" tick={{ fill: "#5e6e83", fontSize: 11 }} />
+                    <Radar name="Tỷ lệ có tiện ích (%)" dataKey="coverage" stroke="#4f46e5" strokeWidth={2} fill="#60a5fa" fillOpacity={0.25} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
             </article>
 
-            <article className="analytics-panel">
+            <article className="analytics-panel chart-span-8">
               <div className="panel-title">
-                <h3>Tiện ích phổ biến</h3>
-                <span>Nhận diện từ nội dung</span>
+                <h3>Nguồn cung và mặt bằng giá theo tỉnh</h3>
+                <span>Top {provinceStoryData.length} tỉnh thành</span>
               </div>
-              <ChartList items={amenityChart.slice(0, 8)} total={visibleItems.length} />
+              <div className="chart-canvas chart-canvas-tall">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={provinceStoryData} margin={{ top: 18, right: 8, left: 0, bottom: 8 }}>
+                    <CartesianGrid vertical={false} stroke="rgba(80, 122, 171, 0.16)" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} />
+                    <YAxis yAxisId="count" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} width={54} />
+                    <YAxis yAxisId="price" orientation="right" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} width={46} unit=" tr" />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: 11, color: "#5e6e83" }} />
+                    <Bar yAxisId="count" dataKey="value" name="Số tin" fill="#7db8f5" radius={[6, 6, 0, 0]} />
+                    <Line yAxisId="price" type="monotone" dataKey="averagePrice" name="Giá TB (triệu)" stroke="#4f46e5" strokeWidth={3} dot={{ r: 3, fill: "#4f46e5" }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
             </article>
 
-            <article className="analytics-panel">
+            <article className="analytics-panel chart-span-4">
               <div className="panel-title">
-                <h3>Chất lượng tọa độ</h3>
-                <span>Độ tin cậy bản đồ</span>
+                <h3>Đóng góp dữ liệu</h3>
+                <span>Theo nguồn crawl</span>
               </div>
-              <ChartList items={precisionChart} total={visibleItems.length} />
+              <div className="chart-canvas chart-canvas-tall">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={sourceChart} dataKey="value" nameKey="label" innerRadius={56} outerRadius={84} paddingAngle={3}>
+                      {sourceChart.map((item, index) => <Cell key={item.label} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 11, color: "#5e6e83" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </article>
 
-            <article className="analytics-panel">
+            <article className="analytics-panel chart-span-6">
               <div className="panel-title">
-                <h3>Tỉnh thành nổi bật</h3>
-                <span>Top khu vực</span>
+                <h3>Quận huyện tập trung nguồn cung</h3>
+                <span>Top 10 khu vực</span>
               </div>
-              <ChartList items={provinceChart} total={visibleItems.length} />
+              <div className="chart-canvas chart-canvas-wide">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={districtChart} layout="vertical" margin={{ top: 14, right: 24, left: 12, bottom: 4 }}>
+                    <CartesianGrid horizontal={false} stroke="rgba(80, 122, 171, 0.16)" />
+                    <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} />
+                    <YAxis type="category" dataKey="label" width={124} tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Bar dataKey="value" name="Số tin" fill="#2563eb" radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </article>
 
-            <article className="analytics-panel wide-panel">
+            <article className="analytics-panel chart-span-6">
               <div className="panel-title">
-                <h3>Quận huyện có nhiều tin</h3>
-                <span>Top 10 theo số lượng</span>
+                <h3>Không gian sống phổ biến</h3>
+                <span>{areaValues.length.toLocaleString("vi-VN")} tin có diện tích</span>
               </div>
-              <ChartList items={districtChart} total={visibleItems.length} />
+              <div className="chart-canvas chart-canvas-wide">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={areaChart} margin={{ top: 18, right: 18, left: 0, bottom: 4 }}>
+                    <CartesianGrid vertical={false} stroke="rgba(80, 122, 171, 0.16)" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} />
+                    <YAxis tickLine={false} axisLine={false} tick={{ fill: "#5e6e83", fontSize: 11 }} width={54} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Bar dataKey="value" name="Số tin" fill="#14b8a6" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </article>
+
+            <article className="analytics-panel chart-span-12 insight-panel">
+              <div className="panel-title">
+                <h3>Kết luận từ lát cắt hiện tại</h3>
+                <span>Tự tính theo bộ lọc</span>
+              </div>
+              <div className="insight-list">
+                <p>
+                  Nguồn cung tập trung mạnh nhất tại <strong>{topDistrict}</strong>, chiếm {districtChart[0] ? formatPercent((districtChart[0].value / Math.max(visibleItems.length, 1)) * 100) : "0%"} tập đang xem.
+                </p>
+                <p>
+                  Giá trung vị là <strong>{formatShortCurrency(medianPrice)}</strong>, trong khi giá trung bình ở mức {formatShortCurrency(avgPrice)}. Chênh lệch này cho thấy ảnh hưởng của nhóm phòng giá cao.
+                </p>
+                <p>
+                  Nhóm tiện ích nổi bật nhất là <strong>{amenityChart[0]?.label ?? "chưa xác định"}</strong>, xuất hiện trong {amenityChart[0] ? formatPercent((amenityChart[0].value / Math.max(visibleItems.length, 1)) * 100) : "0%"} số tin.
+                </p>
+                <p>
+                  Đã loại <strong>{priceOutlierCount.toLocaleString("vi-VN")} tin trên 30 triệu/tháng</strong> trước khi tính toán. Trong đó {extremePriceOutlierCount.toLocaleString("vi-VN")} tin vượt 1 tỷ, chủ yếu do sai đơn vị hoặc tin bán, sang nhượng lọt vào dữ liệu thuê.
+                </p>
+              </div>
             </article>
           </div>
         </section>
+      ) : (
+        <EtlMonitor data={initialData} />
       )}
     </main>
   );

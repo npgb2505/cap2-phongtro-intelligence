@@ -258,7 +258,7 @@ def _build_upsert_sql(*, include_geom: bool) -> str:
     """
 
 
-def load_curated_snapshot(csv_path: Path) -> dict[str, int | str]:
+def load_curated_snapshot(csv_path: Path, *, delete_missing: bool = True) -> dict[str, int | str]:
     if not csv_path.exists():
         raise FileNotFoundError(f"Missing curated CSV: {csv_path}")
 
@@ -288,17 +288,18 @@ def load_curated_snapshot(csv_path: Path) -> dict[str, int | str]:
             cursor.execute(_build_upsert_sql(include_geom=has_postgis))
             inserted_or_updated = cursor.rowcount if cursor.rowcount != -1 else staged
 
-            cursor.execute(
-                """
-                DELETE FROM curated_listings target
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM curated_listings_stage stage
-                    WHERE stage.listing_id = target.listing_id
+            if delete_missing:
+                cursor.execute(
+                    """
+                    DELETE FROM curated_listings target
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM curated_listings_stage stage
+                        WHERE stage.listing_id = target.listing_id
+                    )
+                    """
                 )
-                """
-            )
-            deleted = cursor.rowcount if cursor.rowcount != -1 else 0
+                deleted = cursor.rowcount if cursor.rowcount != -1 else 0
         dbapi_conn.commit()
     except Exception:
         dbapi_conn.rollback()
@@ -324,10 +325,15 @@ def main() -> None:
         default=settings.listing_dataset_path,
         help="Path to curated CSV snapshot",
     )
+    parser.add_argument(
+        "--keep-existing",
+        action="store_true",
+        help="Upsert this batch without deleting rows absent from the input CSV.",
+    )
     args = parser.parse_args()
 
     try:
-        result = load_curated_snapshot(args.csv.resolve())
+        result = load_curated_snapshot(args.csv.resolve(), delete_missing=not args.keep_existing)
     except SQLAlchemyError as exc:
         raise SystemExit(
             "Could not connect and load curated data into PostgreSQL. "

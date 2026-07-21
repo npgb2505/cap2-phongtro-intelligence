@@ -40,7 +40,12 @@ class Phongtro123Extractor:
         image_urls = self._extract_image_urls(soup, json_ld)
 
         contact_phone = self._extract_phone(soup, html)
-        contact_zalo_url = self._extract_contact_href(soup, "zalo.me") or self._extract_first_href(soup, "zalo.me")
+        # Page-wide Zalo links include Phongtro123's own support hotline. Only
+        # accept a link from the listing contact block and validate it below.
+        contact_zalo_url = self._validated_zalo_url(
+            self._extract_contact_href(soup, "zalo.me"),
+            contact_phone,
+        )
         contact_facebook_url = self._extract_contact_href(soup, "facebook.com")
         full_address = table_rows.get("Địa chỉ") or table_rows.get("Dia chi") or self._extract_address_from_map(soup)
         province = self._normalize_region_name(table_rows.get("Tỉnh thành") or table_rows.get("Tinh thanh"))
@@ -105,8 +110,10 @@ class Phongtro123Extractor:
         for candidate in tel_links:
             if re.fullmatch(r"0\d{9,10}", candidate) and candidate != "0909316890":
                 return candidate
-        match = re.search(r"0\d{9,10}", html)
-        return match.group(0) if match else None
+        for candidate in re.findall(r"0\d{9,10}", html):
+            if candidate != "0909316890":
+                return candidate
+        return None
 
     def _extract_contact_name(self, soup: BeautifulSoup, json_ld: list[dict]) -> str | None:
         for item in json_ld:
@@ -212,6 +219,19 @@ class Phongtro123Extractor:
     def _extract_first_href(self, soup: BeautifulSoup, needle: str) -> str | None:
         link = soup.find("a", href=lambda href: href and needle in href)
         return link.get("href") if link else None
+
+    def _validated_zalo_url(self, value: str | None, contact_phone: str | None) -> str | None:
+        if not value:
+            return None
+        match = re.search(r"zalo\.me/(?:pc\?|share/)?(?:phone=)?(0\d{9,10})", value, flags=re.IGNORECASE)
+        if not match:
+            return None
+        zalo_phone = match.group(1)
+        if zalo_phone == "0909316890":
+            return None
+        if contact_phone and zalo_phone != contact_phone:
+            return None
+        return value
 
     def _extract_contact_href(self, soup: BeautifulSoup, needle: str) -> str | None:
         contact_heading = soup.find(lambda tag: tag.name in {"h2", "h3"} and "Thông tin liên hệ" in tag.get_text(" ", strip=True))

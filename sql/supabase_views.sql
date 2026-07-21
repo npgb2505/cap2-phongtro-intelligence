@@ -56,9 +56,9 @@ SELECT
     has_fridge,
     has_washer,
     description_clean,
-    content_hash,
     updated_at
-FROM public.curated_listings;
+FROM public.curated_listings
+WHERE status IN ('active', 'expired');
 
 CREATE OR REPLACE VIEW public.v_dashboard_source_stats AS
 SELECT
@@ -68,7 +68,7 @@ SELECT
     ROUND(AVG(price_value)) AS avg_price,
     ROUND(AVG(area_m2)::numeric, 2) AS avg_area_m2
 FROM public.curated_listings
-WHERE status = 'active'
+WHERE status IN ('active', 'expired')
 GROUP BY source_name;
 
 CREATE OR REPLACE VIEW public.v_dashboard_location_stats AS
@@ -81,7 +81,7 @@ SELECT
     COUNT(*) FILTER (WHERE geocode_precision = 'exact') AS exact_geocode_count,
     COUNT(*) FILTER (WHERE geocode_precision = 'district') AS district_geocode_count
 FROM public.curated_listings
-WHERE status = 'active'
+WHERE status IN ('active', 'expired')
 GROUP BY province, district;
 
 ALTER TABLE public.curated_listings ENABLE ROW LEVEL SECURITY;
@@ -89,14 +89,8 @@ ALTER TABLE public.curated_listings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "public read active listings" ON public.curated_listings;
 DROP POLICY IF EXISTS "public read listings" ON public.curated_listings;
 
-CREATE POLICY "public read listings"
-ON public.curated_listings
-FOR SELECT
-TO anon
-USING (true);
-
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT SELECT ON public.curated_listings TO anon, authenticated;
+REVOKE ALL ON public.curated_listings FROM anon, authenticated;
 GRANT SELECT ON public.v_listing_map TO anon, authenticated;
 GRANT SELECT ON public.v_dashboard_source_stats TO anon, authenticated;
 GRANT SELECT ON public.v_dashboard_location_stats TO anon, authenticated;

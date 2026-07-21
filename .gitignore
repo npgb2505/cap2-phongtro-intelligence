@@ -19,6 +19,8 @@ tmp/
 terraform.tfstate*
 *.tfvars
 *.egg-info/
+*.tsbuildinfo
+/$CODEX_HOME/
 
 # Keep raw crawler artifacts out of Git, but allow the curated CSV used by
 # the no-AWS Render demo image.

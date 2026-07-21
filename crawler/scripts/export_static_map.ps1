@@ -13,7 +13,8 @@ try {
     & $python -m app.static_map_export `
         --source-csv "crawler\artifacts\curated\toan-quoc\listings_curated.csv" `
         --output-json "web\public\data\listings-map.json" `
-        --chunk-size 5000
+        --chunk-size 5000 `
+        --detail-chunk-size 500
     exit $LASTEXITCODE
 }
 finally {

@@ -10,7 +10,7 @@ This project is intentionally designed like a real product:
 - `GitHub Actions ETL` for safe manual or scheduled updates
 - `raw + staging + curated` data layers
 - `Supabase Postgres` for the cloud curated database
-- `Next.js` map frontend on Vercel, with GitHub Pages/static JSON fallback
+- `Next.js` static frontend on Render's free global CDN
 - no AWS/GCP default path because credits/free-trial signup are unavailable
 
 ## Architecture at a glance
@@ -34,11 +34,11 @@ Serving Layer
     -> RLS/read-only policy
 
 Frontend
-  Next.js on Vercel
+  Next.js static export on Render
     -> map view
     -> marker popups
     -> sidebar result list
-    -> fallback to static JSON chunks
+    -> 117,320-row static snapshot split into lazy JSON chunks
 ```
 
 ## Repo layout
@@ -57,13 +57,13 @@ web/         Next.js map frontend
 - Production-oriented repo scaffold created
 - Domain model and SQL schema defined
 - FastAPI endpoints scaffolded
-- Local/bootstrap + incremental crawler flow supports Phongtro123, Alonhadat, ThuePhongTro, NhaTot, BatDongSan, and Mogi source adapters
+- Local/bootstrap + incremental crawler flow keeps six diagnostic adapters; production curation publishes the three verified high-yield sources Phongtro123, NhaTot, and Mogi
 - Concurrent detail crawling added for faster local backfill
-- Map-based frontend scaffolded
+- Map workspace, data-analysis dashboard, and five-layer ETL progress monitor scaffolded
 - Docker Compose for local dev scaffolded
 - Terraform skeleton for AWS scaffolded as legacy/optional infra
 - Local recurring automations created for backfill and daily sync
-- Supabase/Vercel/GitHub Actions deployment guide, SQL views, and manual ETL workflow added
+- Render Static Site blueprint, Supabase SQL views, and manual/scheduled GitHub Actions ETL added
 
 ## Delivery strategy
 
@@ -76,9 +76,9 @@ web/         Next.js map frontend
 
 ### Phase 2
 
-- Create Supabase Free project
-- Load compact curated CSV first, then full curated CSV if free tier allows
-- Deploy Next.js frontend to Vercel
+- Deploy the complete static snapshot to a free Render Static Site
+- Keep Supabase optional until a live database is required
+- Create a Supabase Free project and load curated data only after checking quota
 
 ### Phase 3
 
@@ -133,21 +133,35 @@ This performs incremental crawl, curated transform, optional S3 upload, and opti
 
 Use `--sources phongtro123`, `--sources alonhadat`, or a comma-separated list to run a subset. The merged ETL table is written to `crawler/artifacts/tabular/toan-quoc/listings_all.csv`, while per-source QA tables are written under `crawler/artifacts/tabular/{source}/...`.
 
-For current verified commands, resumable nationwide crawl, and local automation details, see [docs/local-operations.md](/D:/UNIVERSITY/Cap2/docs/local-operations.md).
-For the live field inventory confirmed from the website, see [docs/data-inventory.md](/D:/UNIVERSITY/Cap2/docs/data-inventory.md).
-For the current Supabase/Vercel/GitHub Actions cloud route, see [docs/supabase-vercel-github-actions.md](/D:/UNIVERSITY/Cap2/docs/supabase-vercel-github-actions.md).
-For the older cloud deployment readiness check and rollout flow, see [docs/cloud-deployment-flow.md](/D:/UNIVERSITY/Cap2/docs/cloud-deployment-flow.md).
-For the latest handover, verified data counts, local URLs, and auto-restart setup, see [docs/handover.md](/D:/UNIVERSITY/Cap2/docs/handover.md).
-For a Vietnamese usage guide with AWS credit safeguards, see [docs/huong-dan-su-dung.md](/D:/UNIVERSITY/Cap2/docs/huong-dan-su-dung.md).
-For the no-AWS static fallback route, see [docs/free-deployment.md](/D:/UNIVERSITY/Cap2/docs/free-deployment.md).
-For the older database-backed fallback with Neon, Render, and Vercel, see [docs/cloud-option-2-neon-render-vercel.md](/D:/UNIVERSITY/Cap2/docs/cloud-option-2-neon-render-vercel.md).
-For the current online deployment status, see [docs/online-deploy-status.md](/D:/UNIVERSITY/Cap2/docs/online-deploy-status.md).
-For the final Vietnamese completion report, see [docs/bao-cao-hoan-thien.md](/D:/UNIVERSITY/Cap2/docs/bao-cao-hoan-thien.md).
+The production dataset publishes only `phongtro123`, `nhatot`, and `mogi`. The
+remaining adapters are retained for diagnostics, but their current unique yield
+is too small to improve the dataset. To fill the two underrepresented sources
+with resumable, source-specific checkpoints, run:
 
-Live no-AWS static demo:
+```powershell
+.\crawler\scripts\balanced_backfill.ps1
+```
+
+The command resumes after the highest saved page, crawls NhaTot through its
+verified API offset limit, discovers Mogi's archive boundary using empty chunks,
+then rebuilds the curated and static map snapshots.
+
+For current verified commands, resumable nationwide crawl, and local automation details, see [docs/local-operations.md](docs/local-operations.md).
+For the live field inventory confirmed from the website, see [docs/data-inventory.md](docs/data-inventory.md).
+For the current free Render deployment route, see [docs/render-free-deployment.md](docs/render-free-deployment.md).
+For the optional Supabase/GitHub Actions cloud data route, see [docs/supabase-vercel-github-actions.md](docs/supabase-vercel-github-actions.md).
+For the older cloud deployment readiness check and rollout flow, see [docs/cloud-deployment-flow.md](docs/cloud-deployment-flow.md).
+For the latest handover, verified data counts, local URLs, and auto-restart setup, see [docs/handover.md](docs/handover.md).
+For a Vietnamese usage guide with AWS credit safeguards, see [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md).
+For the no-AWS static fallback route, see [docs/free-deployment.md](docs/free-deployment.md).
+For the older database-backed fallback with Neon, Render, and Vercel, see [docs/cloud-option-2-neon-render-vercel.md](docs/cloud-option-2-neon-render-vercel.md).
+For the current online deployment status, see [docs/online-deploy-status.md](docs/online-deploy-status.md).
+For the final Vietnamese completion report, see [docs/bao-cao-hoan-thien.md](docs/bao-cao-hoan-thien.md).
+
+The public Render URL is recorded after the first deployment in:
 
 ```text
-https://npgb2505.github.io/cap2-phongtro-intelligence/
+docs/online-deploy-status.md
 ```
 
 ### 4. Frontend
@@ -160,11 +174,10 @@ npm run dev
 
 ## Current low-cost target stack
 
-- `Supabase Free Postgres` for `curated_listings`
-- `Supabase views/RLS` for read-only frontend access
+- `Render Static Site` for the frontend and complete tracked snapshot at zero cost
 - `GitHub Actions` for manual/scheduled ETL and database upsert
-- `Vercel Hobby` for the Next.js frontend
-- `GitHub Pages/static JSON` as fallback when Supabase is paused or limited
+- `Supabase Free Postgres` as an optional live curated database
+- `Supabase views/RLS` for read-only frontend access when the database is enabled
 
 ## Legacy AWS target stack
 
@@ -178,8 +191,8 @@ npm run dev
 
 ## Next practical steps
 
-1. Create a Supabase Free project and add GitHub secret `SUPABASE_DB_URL`.
-2. Run `.github/workflows/supabase-etl.yml` with `run_mode=load_existing_csv`.
-3. Let the workflow apply `sql/schema.sql`, load `crawler/artifacts/deploy/listings_deploy.csv`, then apply `sql/supabase_views.sql`.
-4. Deploy `web/` on Vercel with `web/env.vercel.example` values.
-5. Test `crawl_then_load` manually before enabling any schedule.
+1. Create a Render Blueprint from this repository; `render.yaml` provisions the free static site.
+2. Verify the map, filters, analytics dashboard, ETL monitor, and lazy detail loading.
+3. Optionally create a Supabase project and add GitHub secret `SUPABASE_DB_URL`.
+4. Run `.github/workflows/supabase-etl.yml` with `run_mode=load_static_snapshot` for the first database load.
+5. Verify one manual `crawl_then_load` run before relying on the weekly schedule.
