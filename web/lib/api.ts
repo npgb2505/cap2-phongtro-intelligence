@@ -7,6 +7,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const SUPABASE_VIEW = process.env.NEXT_PUBLIC_SUPABASE_LISTINGS_VIEW ?? "v_listing_map";
 const SUPABASE_PAGE_SIZE = clampNumber(process.env.NEXT_PUBLIC_SUPABASE_PAGE_SIZE, 1000, 100, 5000);
 const SUPABASE_MAX_ROWS = clampNumber(process.env.NEXT_PUBLIC_SUPABASE_MAX_ROWS, 60000, 1000, 100000);
+const STATIC_CHUNK_CONCURRENCY = 4;
 
 const INDEX_FIELDS = [
   "id", "source_name", "title", "status", "room_type", "price_value", "area_m2", "street_address", "full_address", "district",
@@ -88,6 +89,23 @@ function dedupeListings(items: Listing[]) {
   });
 }
 
+async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex]);
+    }
+  }
+
+  const workerCount = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
 async function fetchJson(url: string): Promise<ListingMapResponse> {
   const response = await fetch(url, {
     cache: "no-store"
@@ -107,15 +125,17 @@ async function fetchJson(url: string): Promise<ListingMapResponse> {
     };
   }
 
-  const chunkResponses = await Promise.all(
-    payload.chunks.map(async (chunkPath) => {
+  const chunkResponses = await mapWithConcurrency(
+    payload.chunks,
+    STATIC_CHUNK_CONCURRENCY,
+    async (chunkPath) => {
       const chunkUrl = resolveChunkUrl(url, chunkPath);
-      const chunkResponse = await fetch(chunkUrl, { cache: "no-store" });
+      const chunkResponse = await fetch(chunkUrl, { cache: "default" });
       if (!chunkResponse.ok) {
         throw new Error(`Failed to load chunk ${chunkUrl}`);
       }
       return (await chunkResponse.json()) as Pick<ListingMapResponse, "items">;
-    })
+    }
   );
 
   const items = dedupeListings(chunkResponses.flatMap((chunk) => chunk.items ?? []));
