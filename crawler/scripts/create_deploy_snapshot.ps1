@@ -14,7 +14,8 @@ try {
         --source-csv "crawler\artifacts\curated\toan-quoc\listings_curated.csv" `
         --output-csv "crawler\artifacts\deploy\listings_deploy.csv" `
         --summary-json "crawler\artifacts\deploy\deploy_snapshot_summary.json" `
-        --total-rows 60000
+        --max-rows 60000 `
+        --min-source-share 0.24
     exit $LASTEXITCODE
 }
 finally {

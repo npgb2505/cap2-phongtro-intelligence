@@ -53,8 +53,35 @@ class DeploySnapshotTests(unittest.TestCase):
 
             self.assertEqual(summary["total_rows"], 6)
             self.assertEqual(summary["source_counts"], {"phongtro123": 3, "nhatot": 1, "mogi": 2})
-            self.assertEqual(summary["selection_strategy"], "balanced-quality-ranked")
+            self.assertEqual(summary["selection_strategy"], "minority-share-balanced-quality-ranked")
             self.assertEqual(json.loads(summary_json.read_text(encoding="utf-8"))["target_rows"], 6)
+
+    def test_derives_non_round_candidate_count_from_smallest_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_csv = root / "curated.csv"
+            output_csv = root / "deploy" / "listings_deploy.csv"
+            rows = [
+                *[row("phongtro123", index, 80 + index) for index in range(10)],
+                *[row("nhatot", index, 80 + index) for index in range(3)],
+                *[row("mogi", index, 80 + index) for index in range(10)],
+            ]
+            with source_csv.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+
+            summary = build_deploy_snapshot(
+                source_csv=source_csv,
+                output_csv=output_csv,
+                summary_json=output_csv.with_name("deploy_snapshot_summary.json"),
+                max_rows=20,
+                min_source_share=0.25,
+            )
+
+            self.assertEqual(summary["candidate_rows"], 12)
+            self.assertEqual(summary["source_counts"], {"phongtro123": 5, "nhatot": 3, "mogi": 4})
+            self.assertEqual(summary["min_source_share"], 0.25)
 
 
 if __name__ == "__main__":

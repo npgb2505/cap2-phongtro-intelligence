@@ -73,11 +73,15 @@ export type ListingMapResponse = {
   skipped_rows?: number;
   quality_summary?: {
     enabled: boolean;
+    minimum_score?: number | null;
     input_rows: number;
     valid_source_rows: number;
+    core_qualified_rows?: number;
     qualified_rows: number;
     published_rows: number;
     rejected_invalid_source_rows: number;
+    rejected_core_quality_rows?: number;
+    rejected_score_rows?: number;
     rejected_low_quality_rows: number;
     trimmed_rows: number;
     qualified_source_counts: Record<string, number>;
@@ -91,30 +95,51 @@ export type ListingMapResponse = {
 };
 
 export type EtlSummary = {
+  run_id?: string;
+  pipeline_version?: string;
+  run_mode?: string;
+  dataset_fingerprint?: string;
   generated_at: string;
+  source_generated_at?: string | null;
   status: "success" | "running" | "failed";
   source_rows: number;
+  source_rejected_rows?: number;
   deduplicated_rows: number;
   duplicate_rows: number;
   rejected_rows: number;
+  selection_excluded_rows?: number;
+  candidate_rows?: number;
   curated_rows: number;
   located_rows: number;
   exact_geocoded_rows: number;
   unresolved_geocode_rows: number;
+  quality_qualified_rows?: number;
   published_rows: number;
   duration_seconds?: number | null;
+  stage_durations_seconds?: Record<string, number>;
+  published_at?: string;
   source_counts: Record<string, number>;
   status_counts: Record<string, number>;
 };
 
 export type EtlRun = {
+  run_id?: string;
+  pipeline_version?: string;
+  run_mode?: string;
+  dataset_fingerprint?: string;
   date: string;
   generated_at: string;
   status: "success" | "running" | "failed";
   source_rows: number;
+  deduplicated_rows?: number;
+  candidate_rows?: number;
   curated_rows: number;
   rejected_rows: number;
   located_rows: number;
+  quality_qualified_rows?: number;
   published_rows: number;
   duration_seconds?: number | null;
+  stage_durations_seconds?: Record<string, number>;
+  source_generated_at?: string | null;
+  published_at?: string;
 };

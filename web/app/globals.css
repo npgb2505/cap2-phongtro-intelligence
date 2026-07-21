@@ -1451,6 +1451,15 @@ a {
   color: var(--muted);
 }
 
+.etl-run-state code {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent-dark);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .etl-status,
 .run-status {
   display: inline-flex;
@@ -1814,9 +1823,9 @@ a {
 
 .etl-run-row {
   display: grid;
-  grid-template-columns: minmax(145px, 1.4fr) 100px repeat(3, minmax(72px, 0.7fr)) minmax(110px, 1fr);
+  grid-template-columns: minmax(150px, 1.2fr) minmax(220px, 1.6fr) repeat(4, minmax(76px, 0.62fr)) minmax(110px, 0.9fr);
   align-items: center;
-  min-width: 720px;
+  min-width: 930px;
   border-top: 1px solid var(--line);
 }
 
@@ -1836,6 +1845,25 @@ a {
   color: var(--ink);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.etl-run-time,
+.etl-run-identity {
+  display: grid;
+  gap: 5px;
+}
+
+.etl-run-identity code {
+  overflow: hidden;
+  color: var(--accent-dark);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.etl-run-identity small {
+  color: var(--muted);
+  font-size: 0.64rem;
 }
 
 .etl-run-head {

@@ -41,6 +41,14 @@ class StaticMapExportTests(unittest.TestCase):
                 "skipped_low_quality_rows": 1,
                 "duration_seconds": 12.5,
             }), encoding="utf-8")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps({
+                "etl_runs": [{
+                    "run_id": "experimental-export",
+                    "date": "2026-07-14",
+                    "generated_at": "2026-07-14T03:00:00+00:00",
+                }],
+            }), encoding="utf-8")
 
             manifest = export_static_map(
                 source_csv=source,
@@ -53,8 +61,15 @@ class StaticMapExportTests(unittest.TestCase):
             self.assertTrue(manifest["dataset_version"])
             self.assertEqual(len(manifest["chunks"]), 2)
             self.assertEqual(manifest["etl_summary"]["source_rows"], 5)
+            self.assertEqual(manifest["etl_summary"]["deduplicated_rows"], 3)
+            self.assertEqual(manifest["etl_summary"]["candidate_rows"], 3)
             self.assertEqual(manifest["etl_summary"]["published_rows"], 3)
             self.assertEqual(manifest["etl_runs"][0]["date"], "2026-07-15")
+            self.assertTrue(manifest["etl_runs"][0]["run_id"].startswith("etl-20260715-"))
+            self.assertNotEqual(manifest["etl_runs"][0]["run_id"], "experimental-export")
+            history = json.loads((source.parent / "etl_run_history.json").read_text(encoding="utf-8"))
+            self.assertEqual(history["history_scope"], "production_only")
+            self.assertEqual(len(history["runs"]), 1)
             index_payload = json.loads((output.parent / manifest["chunks"][0]).read_text(encoding="utf-8"))
             first = index_payload["items"][0]
             self.assertNotIn("description_clean", first)
@@ -137,6 +152,7 @@ class StaticMapExportTests(unittest.TestCase):
 
             self.assertEqual(manifest["total"], 1)
             self.assertEqual(manifest["quality_summary"]["qualified_rows"], 3)
+            self.assertEqual(manifest["quality_summary"]["minimum_score"], 68)
             self.assertEqual(manifest["quality_summary"]["rejected_low_quality_rows"], 0)
             self.assertEqual(manifest["quality_summary"]["trimmed_rows"], 2)
             self.assertEqual(manifest["items"][0]["id"], "active-direct")

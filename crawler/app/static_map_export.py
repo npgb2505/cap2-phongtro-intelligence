@@ -6,8 +6,14 @@ import json
 from collections import Counter
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 
-from app.deploy_snapshot import DEFAULT_SOURCES, DEFAULT_TOTAL_ROWS, build_deploy_snapshot
+from app.deploy_snapshot import (
+    DEFAULT_MAX_ROWS,
+    DEFAULT_MIN_SOURCE_SHARE,
+    DEFAULT_SOURCES,
+    build_deploy_snapshot,
+)
 from app.publication_quality import (
     PublicationAssessment,
     evaluate_publication_quality,
@@ -17,6 +23,7 @@ from app.publication_quality import (
 
 KNOWN_SOURCES = {"phongtro123", "nhatot", "mogi"}
 VIETNAM_TIMEZONE = timezone(timedelta(hours=7))
+DEFAULT_MIN_QUALITY_SCORE = 68
 
 
 def _string(value: object) -> str | None:
@@ -145,61 +152,127 @@ def _local_run_date(generated_at: str) -> str:
 def _etl_monitor_payload(
     *,
     source_csv: Path,
-    output_json: Path,
     curated_rows: list[dict[str, str]],
     published_rows: list[dict[str, str]],
     source_counts: Counter[str],
     curated_geocode_summary: Counter[str],
+    quality_summary: dict[str, object],
+    export_duration_seconds: float,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
+    deploy_summary = _read_json(source_csv.with_name("deploy_snapshot_summary.json"))
     curation_summary = _read_json(source_csv.with_name("curation_summary.json"))
-    if not curation_summary:
-        curation_summary = _read_json(source_csv.with_name("deploy_snapshot_summary.json"))
-    generated_at = str(curation_summary.get("generated_at") or datetime.now(UTC).isoformat())
-    source_rows = int(curation_summary.get("source_rows") or len(curated_rows))
-    duplicate_rows = int(curation_summary.get("duplicate_source_rows") or 0)
-    curation_rejected_rows = int(curation_summary.get("skipped_low_quality_rows") or 0)
+    run_metadata = deploy_summary or curation_summary
+    generated_at = str(run_metadata.get("generated_at") or datetime.now(UTC).isoformat())
+    source_rows = int(run_metadata.get("source_rows") or len(curated_rows))
+    source_rejected_rows = int(
+        run_metadata.get("source_rejected_rows")
+        or run_metadata.get("skipped_low_quality_rows")
+        or 0
+    )
+    duplicate_rows = int(run_metadata.get("duplicate_source_rows") or 0)
+    deduplicated_rows = int(
+        run_metadata.get("curated_source_rows")
+        or max(source_rows - source_rejected_rows - duplicate_rows, 0)
+    )
+    candidate_rows = len(curated_rows)
+    selection_excluded_rows = int(
+        run_metadata.get("selection_excluded_rows")
+        or max(deduplicated_rows - candidate_rows, 0)
+    )
     exact_rows = int(curated_geocode_summary.get("exact", 0))
     located_rows = len(curated_rows) - int(curated_geocode_summary.get("none", 0))
     status_counts = Counter(str(row.get("status") or "active") for row in published_rows)
-    rejected_rows = max(
-        source_rows - len(published_rows) - duplicate_rows,
-        curation_rejected_rows,
+    quality_qualified_rows = int(quality_summary.get("qualified_rows") or len(published_rows))
+    rejected_rows = max(candidate_rows - len(published_rows), 0)
+    duration_parts = [
+        run_metadata.get("curation_duration_seconds"),
+        run_metadata.get("duration_seconds"),
+        export_duration_seconds,
+    ]
+    duration_seconds = round(sum(float(value) for value in duration_parts if value is not None), 3)
+    stage_durations_seconds = {
+        "source_transform": float(run_metadata.get("curation_duration_seconds") or 0),
+        "candidate_selection": float(run_metadata.get("duration_seconds") or 0),
+        "static_export": round(export_duration_seconds, 3),
+    }
+    published_at = datetime.now(UTC).isoformat()
+    pipeline_version = str(run_metadata.get("pipeline_version") or "production-quality-v3")
+    dataset_fingerprint = str(run_metadata.get("dataset_fingerprint") or f"{candidate_rows:x}{len(published_rows):x}")
+    run_id = str(
+        run_metadata.get("run_id")
+        or f"etl-{_local_run_date(generated_at).replace('-', '')}-{dataset_fingerprint[:8]}"
     )
     summary = {
+        "run_id": run_id,
+        "pipeline_version": pipeline_version,
+        "run_mode": str(run_metadata.get("run_mode") or "production_snapshot"),
+        "dataset_fingerprint": dataset_fingerprint,
         "generated_at": generated_at,
+        "source_generated_at": run_metadata.get("source_generated_at") or curation_summary.get("generated_at"),
         "status": "success",
         "source_rows": source_rows,
-        "deduplicated_rows": max(source_rows - duplicate_rows, 0),
+        "source_rejected_rows": source_rejected_rows,
+        "deduplicated_rows": deduplicated_rows,
         "duplicate_rows": duplicate_rows,
         "rejected_rows": rejected_rows,
-        "curated_rows": len(curated_rows),
+        "selection_excluded_rows": selection_excluded_rows,
+        "candidate_rows": candidate_rows,
+        "curated_rows": candidate_rows,
         "located_rows": located_rows,
         "exact_geocoded_rows": exact_rows,
         "unresolved_geocode_rows": int(curated_geocode_summary.get("none", 0)),
+        "quality_qualified_rows": quality_qualified_rows,
         "published_rows": len(published_rows),
-        "duration_seconds": curation_summary.get("duration_seconds"),
+        "duration_seconds": duration_seconds,
+        "stage_durations_seconds": stage_durations_seconds,
+        "published_at": published_at,
         "source_counts": dict(source_counts),
         "status_counts": dict(status_counts),
     }
     current_run = {
+        "run_id": run_id,
+        "pipeline_version": pipeline_version,
+        "run_mode": summary["run_mode"],
+        "dataset_fingerprint": dataset_fingerprint,
         "date": _local_run_date(generated_at),
         "generated_at": generated_at,
         "status": "success",
         "source_rows": source_rows,
-        "curated_rows": len(curated_rows),
-        "rejected_rows": duplicate_rows + rejected_rows,
+        "deduplicated_rows": deduplicated_rows,
+        "candidate_rows": candidate_rows,
+        "curated_rows": candidate_rows,
+        "rejected_rows": rejected_rows,
         "located_rows": located_rows,
+        "quality_qualified_rows": quality_qualified_rows,
         "published_rows": len(published_rows),
-        "duration_seconds": curation_summary.get("duration_seconds"),
+        "duration_seconds": duration_seconds,
+        "stage_durations_seconds": stage_durations_seconds,
+        "source_generated_at": summary["source_generated_at"],
+        "published_at": published_at,
     }
-    previous_manifest = _read_json(output_json)
-    previous_runs = previous_manifest.get("etl_runs")
+    history_path = source_csv.with_name("etl_run_history.json")
+    history_payload = _read_json(history_path)
+    previous_runs = history_payload.get("runs")
     history = {
-        str(run.get("date")): run
-        for run in previous_runs if isinstance(run, dict) and run.get("date")
+        str(run.get("run_id")): run
+        for run in previous_runs
+        if isinstance(run, dict) and run.get("run_id")
     } if isinstance(previous_runs, list) else {}
-    history[current_run["date"]] = current_run
-    runs = [history[key] for key in sorted(history)][-30:]
+    history[run_id] = current_run
+    runs = sorted(history.values(), key=lambda run: str(run.get("generated_at") or ""))[-30:]
+    history_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "history_scope": "production_only",
+                "pipeline_version": pipeline_version,
+                "runs": runs,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
+    )
     return summary, runs
 
 
@@ -210,17 +283,24 @@ def export_static_map(
     chunk_size: int,
     detail_chunk_size: int = 500,
     quality_only: bool = False,
+    min_quality_score: int = DEFAULT_MIN_QUALITY_SCORE,
     max_rows: int | None = None,
 ) -> dict[str, object]:
+    started_clock = perf_counter()
     with source_csv.open("r", encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
 
     curated_rows = [row for row in rows if _valid_row(row)]
     assessed_rows = [(row, evaluate_publication_quality(row)) for row in curated_rows]
-    qualified_rows = [
+    core_qualified_rows = [
         (row, assessment)
         for row, assessment in assessed_rows
         if not quality_only or assessment.publishable
+    ]
+    qualified_rows = [
+        (row, assessment)
+        for row, assessment in core_qualified_rows
+        if not quality_only or assessment.score >= min_quality_score
     ]
     if quality_only:
         qualified_rows.sort(
@@ -258,22 +338,18 @@ def export_static_map(
     geocode_summary = Counter(str(item.get("geocode_precision") or "none") for item in items)
     curated_geocode_summary = Counter(str(row.get("geocode_precision") or "none") for row in curated_rows)
     available_provinces = sorted({str(item["province"]) for item in items if item.get("province")})
-    etl_summary, etl_runs = _etl_monitor_payload(
-        source_csv=source_csv,
-        output_json=output_json,
-        curated_rows=curated_rows,
-        published_rows=[row for row, _assessment in published_rows],
-        source_counts=source_counts,
-        curated_geocode_summary=curated_geocode_summary,
-    )
     qualified_source_counts = Counter(str(row.get("source_name") or "unknown") for row, _assessment in qualified_rows)
     quality_summary = {
         "enabled": quality_only,
+        "minimum_score": min_quality_score if quality_only else None,
         "input_rows": len(rows),
         "valid_source_rows": len(curated_rows),
+        "core_qualified_rows": len(core_qualified_rows),
         "qualified_rows": len(qualified_rows),
         "published_rows": len(published_rows),
         "rejected_invalid_source_rows": len(rows) - len(curated_rows),
+        "rejected_core_quality_rows": len(curated_rows) - len(core_qualified_rows),
+        "rejected_score_rows": len(core_qualified_rows) - len(qualified_rows),
         "rejected_low_quality_rows": len(curated_rows) - len(qualified_rows),
         "trimmed_rows": len(qualified_rows) - len(published_rows),
         "qualified_source_counts": dict(qualified_source_counts),
@@ -284,9 +360,19 @@ def export_static_map(
             "address",
             "canonical_url",
             "useful_content",
+            f"publication_quality_score_gte_{min_quality_score}",
         ],
         "ranking_preferences": ["image_and_contact", "direct_contact", "contact_name", "real_image", "active_status", "description"],
     }
+    etl_summary, etl_runs = _etl_monitor_payload(
+        source_csv=source_csv,
+        curated_rows=curated_rows,
+        published_rows=[row for row, _assessment in published_rows],
+        source_counts=source_counts,
+        curated_geocode_summary=curated_geocode_summary,
+        quality_summary=quality_summary,
+        export_duration_seconds=perf_counter() - started_clock,
+    )
 
     output = {
         "total": len(items),
@@ -340,7 +426,8 @@ def main() -> None:
     parser.add_argument("--ensure-snapshot", action="store_true")
     parser.add_argument("--chunk-size", type=int, default=0)
     parser.add_argument("--detail-chunk-size", type=int, default=500)
-    parser.add_argument("--max-rows", type=int, default=55_000)
+    parser.add_argument("--min-quality-score", type=int, default=DEFAULT_MIN_QUALITY_SCORE)
+    parser.add_argument("--max-rows", type=int)
     parser.add_argument("--include-low-quality", action="store_true")
     args = parser.parse_args()
 
@@ -351,7 +438,8 @@ def main() -> None:
             output_csv=source_csv,
             summary_json=Path("crawler/artifacts/deploy/deploy_snapshot_summary.json").resolve(),
             sources=DEFAULT_SOURCES,
-            total_rows=DEFAULT_TOTAL_ROWS,
+            max_rows=DEFAULT_MAX_ROWS,
+            min_source_share=DEFAULT_MIN_SOURCE_SHARE,
         )
 
     output = export_static_map(
@@ -360,6 +448,7 @@ def main() -> None:
         chunk_size=args.chunk_size,
         detail_chunk_size=args.detail_chunk_size,
         quality_only=not args.include_low_quality,
+        min_quality_score=args.min_quality_score,
         max_rows=args.max_rows,
     )
     print(

@@ -28,5 +28,6 @@ crawler/artifacts/**
 !crawler/artifacts/deploy/
 !crawler/artifacts/deploy/listings_deploy.csv
 !crawler/artifacts/deploy/deploy_snapshot_summary.json
+!crawler/artifacts/deploy/etl_run_history.json
 
 web/out/

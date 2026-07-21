@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "history_scope": "production_only",
+  "pipeline_version": "production-quality-v3",
+  "runs": [
+    {
+      "run_id": "etl-20260721T115713Z-d3cd1939",
+      "pipeline_version": "production-quality-v3",
+      "run_mode": "production_snapshot",
+      "dataset_fingerprint": "d3cd193949ffdd25",
+      "date": "2026-07-21",
+      "generated_at": "2026-07-21T11:57:13.124641+00:00",
+      "status": "success",
+      "source_rows": 117742,
+      "deduplicated_rows": 117395,
+      "candidate_rows": 58595,
+      "curated_rows": 58595,
+      "rejected_rows": 5198,
+      "located_rows": 58585,
+      "quality_qualified_rows": 53397,
+      "published_rows": 53397,
+      "duration_seconds": 215.65,
+      "stage_durations_seconds": {
+        "source_transform": 204.03,
+        "candidate_selection": 8.109,
+        "static_export": 3.511
+      },
+      "source_generated_at": "2026-07-16T05:22:23.628670+00:00",
+      "published_at": "2026-07-21T11:58:20.735579+00:00"
+    }
+  ]
+}

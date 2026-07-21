@@ -24,7 +24,7 @@ if (Number(manifest.total) < 50_000) {
   throw new Error(`Static manifest only contains ${manifest.total} rows`);
 }
 if (Number(manifest.total) > 55_000) {
-  throw new Error(`Static manifest exceeds the 55,000-row public quality cap: ${manifest.total}`);
+  throw new Error(`Static manifest contains unexpectedly many public rows: ${manifest.total}`);
 }
 if (!manifest.quality_summary?.enabled) {
   throw new Error("Static manifest quality gate is not enabled");
@@ -32,11 +32,23 @@ if (!manifest.quality_summary?.enabled) {
 if (Number(manifest.quality_summary.published_rows) !== Number(manifest.total)) {
   throw new Error("Quality summary published count does not match static manifest total");
 }
-if (Number(manifest.quality_summary.input_rows) !== 60_000) {
-  throw new Error(`Balanced candidate pool must contain 60,000 rows, got ${manifest.quality_summary.input_rows}`);
+const candidateRows = Number(manifest.quality_summary.input_rows);
+const removedCandidateRows = candidateRows - Number(manifest.total);
+const minimumQualityScore = Number(manifest.quality_summary.minimum_score);
+if (candidateRows < 55_000 || candidateRows > 60_000) {
+  throw new Error(`Balanced candidate pool is outside the expected data-derived range: ${candidateRows}`);
 }
-if (Number(manifest.quality_summary.input_rows) - Number(manifest.total) !== 5_000) {
-  throw new Error("The public pipeline must reduce the 60,000-row candidate pool to 55,000 rows");
+if (candidateRows % 1_000 === 0 || Number(manifest.total) % 1_000 === 0) {
+  throw new Error("Candidate and publication counts must be produced by data rules, not round presentation quotas");
+}
+if (removedCandidateRows < 4_000 || removedCandidateRows > 7_000) {
+  throw new Error(`Quality gate removed an unexpected number of candidates: ${removedCandidateRows}`);
+}
+if (minimumQualityScore !== 68) {
+  throw new Error(`Unexpected publication quality threshold: ${minimumQualityScore}`);
+}
+if (Number(manifest.quality_summary.qualified_rows) !== Number(manifest.total) || Number(manifest.quality_summary.trimmed_rows) !== 0) {
+  throw new Error("Every row that passes the score-based quality gate must be published without a round-number cap");
 }
 if (!manifest.etl_summary || !Array.isArray(manifest.etl_runs) || manifest.etl_runs.length === 0) {
   throw new Error("Static manifest has no ETL monitoring metadata");
@@ -44,8 +56,17 @@ if (!manifest.etl_summary || !Array.isArray(manifest.etl_runs) || manifest.etl_r
 if (Number(manifest.etl_summary.published_rows) !== Number(manifest.total)) {
   throw new Error("ETL published row count does not match static manifest total");
 }
-if (Number(manifest.etl_summary.source_rows) < Number(manifest.etl_summary.curated_rows)) {
-  throw new Error("ETL source row count is lower than curated row count");
+if (Number(manifest.etl_summary.candidate_rows) !== candidateRows || Number(manifest.etl_summary.quality_qualified_rows) !== Number(manifest.total)) {
+  throw new Error("ETL layer counts do not match the quality summary");
+}
+if (Number(manifest.etl_summary.source_rows) < Number(manifest.etl_summary.deduplicated_rows) || Number(manifest.etl_summary.deduplicated_rows) < candidateRows) {
+  throw new Error("ETL layer counts are not monotonically decreasing");
+}
+if (!manifest.etl_summary.run_id || !manifest.etl_summary.dataset_fingerprint || manifest.etl_summary.pipeline_version !== "production-quality-v3") {
+  throw new Error("ETL summary is missing production provenance");
+}
+if (manifest.etl_runs.some((run) => !run.run_id || !run.dataset_fingerprint || run.pipeline_version !== "production-quality-v3")) {
+  throw new Error("ETL history contains an unverified or non-production run");
 }
 
 const ids = new Set();
@@ -84,7 +105,7 @@ for (const chunkPath of manifest.chunks) {
     if (indexRows <= 500 && (!hasRealImage || !hasContact)) {
       throw new Error(`Top-ranked listing ${item.id} must include both a real image and contact information`);
     }
-    if (Number(item.publication_quality_score) < 60) {
+    if (Number(item.publication_quality_score) < minimumQualityScore) {
       throw new Error(`Listing ${item.id} has a low publication quality score`);
     }
     if (Number(item.price_value) < 300_000 || Number(item.price_value) > 30_000_000) {
@@ -158,6 +179,10 @@ console.log(JSON.stringify({
   noImageRows,
   contactRows,
   sourceRows: Object.fromEntries(sourceRows),
+  candidateRows,
+  removedCandidateRows,
+  minimumQualityScore,
+  runId: manifest.etl_summary.run_id,
   rejectedLowQuality: manifest.quality_summary.rejected_low_quality_rows,
   trimmedRows: manifest.quality_summary.trimmed_rows
 }));

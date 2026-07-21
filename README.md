@@ -38,8 +38,8 @@ Frontend
     -> map view
     -> marker popups
     -> sidebar result list
-    -> balanced 60,000-row candidate pool from 3 sources
-    -> 55,000-row quality-ranked snapshot split into lazy JSON chunks
+    -> data-derived balanced candidate pool from 3 sources
+    -> score-gated public snapshot split into lazy JSON chunks
 ```
 
 ## Repo layout

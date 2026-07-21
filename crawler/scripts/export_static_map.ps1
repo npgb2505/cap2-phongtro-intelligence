@@ -14,7 +14,8 @@ try {
         --source-csv "crawler\artifacts\curated\toan-quoc\listings_curated.csv" `
         --output-csv "crawler\artifacts\deploy\listings_deploy.csv" `
         --summary-json "crawler\artifacts\deploy\deploy_snapshot_summary.json" `
-        --total-rows 60000
+        --max-rows 60000 `
+        --min-source-share 0.24
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
@@ -24,7 +25,7 @@ try {
         --output-json "web\public\data\listings-map.json" `
         --chunk-size 5000 `
         --detail-chunk-size 500 `
-        --max-rows 55000
+        --min-quality-score 68
     exit $LASTEXITCODE
 }
 finally {
