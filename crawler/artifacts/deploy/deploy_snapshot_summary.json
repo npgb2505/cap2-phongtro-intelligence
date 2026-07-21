@@ -1,11 +1,18 @@
 {
+  "generated_at": "2026-07-21T11:26:29.076157+00:00",
   "source_csv": "D:\\UNIVERSITY\\Cap2\\crawler\\artifacts\\curated\\toan-quoc\\listings_curated.csv",
   "output_csv": "D:\\UNIVERSITY\\Cap2\\crawler\\artifacts\\deploy\\listings_deploy.csv",
-  "total_rows": 3000,
-  "per_source_target": 1000,
+  "total_rows": 60000,
+  "target_rows": 60000,
+  "selection_strategy": "balanced-quality-ranked",
+  "available_source_counts": {
+    "phongtro123": 44338,
+    "nhatot": 14063,
+    "mogi": 58994
+  },
   "source_counts": {
-    "phongtro123": 1000,
-    "nhatot": 1000,
-    "mogi": 1000
+    "phongtro123": 22969,
+    "nhatot": 14063,
+    "mogi": 22968
   }
 }

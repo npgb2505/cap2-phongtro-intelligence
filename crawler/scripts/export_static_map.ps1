@@ -10,12 +10,21 @@ if (-not (Test-Path $python)) {
 
 Push-Location $repoRoot
 try {
-    & $python -m app.static_map_export `
+    & $python -m app.deploy_snapshot `
         --source-csv "crawler\artifacts\curated\toan-quoc\listings_curated.csv" `
+        --output-csv "crawler\artifacts\deploy\listings_deploy.csv" `
+        --summary-json "crawler\artifacts\deploy\deploy_snapshot_summary.json" `
+        --total-rows 60000
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    & $python -m app.static_map_export `
+        --source-csv "crawler\artifacts\deploy\listings_deploy.csv" `
         --output-json "web\public\data\listings-map.json" `
         --chunk-size 5000 `
         --detail-chunk-size 500 `
-        --max-rows 50000
+        --max-rows 55000
     exit $LASTEXITCODE
 }
 finally {

@@ -20,17 +20,23 @@ const canonicalProvinces = new Set([
 if (!Array.isArray(manifest.chunks) || manifest.chunks.length === 0) {
   throw new Error("Static manifest has no index chunks");
 }
-if (Number(manifest.total) < 10_000) {
+if (Number(manifest.total) < 50_000) {
   throw new Error(`Static manifest only contains ${manifest.total} rows`);
 }
-if (Number(manifest.total) > 50_000) {
-  throw new Error(`Static manifest exceeds the 50,000-row public quality cap: ${manifest.total}`);
+if (Number(manifest.total) > 55_000) {
+  throw new Error(`Static manifest exceeds the 55,000-row public quality cap: ${manifest.total}`);
 }
 if (!manifest.quality_summary?.enabled) {
   throw new Error("Static manifest quality gate is not enabled");
 }
 if (Number(manifest.quality_summary.published_rows) !== Number(manifest.total)) {
   throw new Error("Quality summary published count does not match static manifest total");
+}
+if (Number(manifest.quality_summary.input_rows) !== 60_000) {
+  throw new Error(`Balanced candidate pool must contain 60,000 rows, got ${manifest.quality_summary.input_rows}`);
+}
+if (Number(manifest.quality_summary.input_rows) - Number(manifest.total) !== 5_000) {
+  throw new Error("The public pipeline must reduce the 60,000-row candidate pool to 55,000 rows");
 }
 if (!manifest.etl_summary || !Array.isArray(manifest.etl_runs) || manifest.etl_runs.length === 0) {
   throw new Error("Static manifest has no ETL monitoring metadata");
@@ -45,9 +51,13 @@ if (Number(manifest.etl_summary.source_rows) < Number(manifest.etl_summary.curat
 const ids = new Set();
 const detailPaths = new Set();
 const invalidProvinces = new Set();
+const sourceRows = new Map();
+const indexById = new Map();
+const realImageIds = new Set();
 let indexRows = 0;
 let imageRows = 0;
 let noImageRows = 0;
+let contactRows = 0;
 
 for (const chunkPath of manifest.chunks) {
   const payload = JSON.parse(await readFile(path.join(dataRoot, chunkPath), "utf8"));
@@ -57,6 +67,8 @@ for (const chunkPath of manifest.chunks) {
       throw new Error(`Missing or duplicate listing id: ${item.id}`);
     }
     ids.add(item.id);
+    indexById.set(item.id, item);
+    sourceRows.set(item.source_name, (sourceRows.get(item.source_name) ?? 0) + 1);
     if (item.province && !canonicalProvinces.has(item.province)) {
       invalidProvinces.add(item.province);
     }
@@ -64,10 +76,13 @@ for (const chunkPath of manifest.chunks) {
       throw new Error(`Listing ${item.id} has no lazy detail path`);
     }
     const hasRealImage = /^https?:\/\//i.test(item.thumbnail_url ?? "") && !/(?:thumb_default|no[-_]image|placeholder|default[-_]image)/i.test(item.thumbnail_url);
+    if (hasRealImage) realImageIds.add(item.id);
     imageRows += hasRealImage ? 1 : 0;
     noImageRows += hasRealImage ? 0 : 1;
-    if (!item.has_direct_contact && !item.has_contact_name) {
-      throw new Error(`Listing ${item.id} has no usable contact`);
+    const hasContact = item.has_direct_contact || item.has_contact_name;
+    contactRows += hasContact ? 1 : 0;
+    if (indexRows <= 500 && (!hasRealImage || !hasContact)) {
+      throw new Error(`Top-ranked listing ${item.id} must include both a real image and contact information`);
     }
     if (Number(item.publication_quality_score) < 60) {
       throw new Error(`Listing ${item.id} has a low publication quality score`);
@@ -91,6 +106,11 @@ if (indexRows !== Number(manifest.total)) {
 if (invalidProvinces.size) {
   throw new Error(`Invalid provinces: ${[...invalidProvinces].slice(0, 10).join(", ")}`);
 }
+for (const source of ["phongtro123", "nhatot", "mogi"]) {
+  if ((sourceRows.get(source) ?? 0) < 10_000) {
+    throw new Error(`Source ${source} is under-represented: ${sourceRows.get(source) ?? 0}`);
+  }
+}
 
 let detailRows = 0;
 const detailIds = new Set();
@@ -111,8 +131,10 @@ for (const detailPath of detailPaths) {
     if (Object.hasOwn(item, "content_hash")) {
       throw new Error(`Public detail exposes content_hash for ${item.id}`);
     }
-    if (String(item.description_clean ?? "").trim().length < 80) {
-      throw new Error(`Public detail has an incomplete description for ${item.id}`);
+    const indexItem = indexById.get(item.id);
+    const hasDescription = String(item.description_clean ?? "").trim().length >= 80;
+    if (!hasDescription && !indexItem?.has_direct_contact && !indexItem?.has_contact_name && !realImageIds.has(item.id)) {
+      throw new Error(`Public detail ${item.id} has no useful image, contact, or description`);
     }
     if (!/^https?:\/\//i.test(item.canonical_url ?? "")) {
       throw new Error(`Public detail has no canonical URL for ${item.id}`);
@@ -134,6 +156,8 @@ console.log(JSON.stringify({
   etlRuns: manifest.etl_runs.length,
   imageRows,
   noImageRows,
+  contactRows,
+  sourceRows: Object.fromEntries(sourceRows),
   rejectedLowQuality: manifest.quality_summary.rejected_low_quality_rows,
   trimmedRows: manifest.quality_summary.trimmed_rows
 }));

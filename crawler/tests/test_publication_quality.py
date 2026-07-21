@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from app.publication_quality import evaluate_publication_quality, is_contact_name
+from app.publication_quality import (
+    evaluate_publication_quality,
+    is_contact_name,
+    publication_sort_key,
+)
 
 
 def complete_row() -> dict[str, str]:
@@ -45,14 +49,38 @@ class PublicationQualityTests(unittest.TestCase):
         self.assertFalse(assessment.has_real_image)
         self.assertLess(assessment.score, evaluate_publication_quality(complete_row()).score)
 
-    def test_listing_without_contact_is_rejected(self) -> None:
+    def test_listing_without_contact_is_allowed_when_other_content_is_useful(self) -> None:
         row = complete_row()
         row["contact_phone"] = ""
         row["contact_name"] = ""
 
         assessment = evaluate_publication_quality(row)
 
+        self.assertTrue(assessment.publishable)
+        self.assertFalse(assessment.has_direct_contact)
+
+    def test_listing_without_any_useful_content_is_rejected(self) -> None:
+        row = complete_row()
+        row["contact_phone"] = ""
+        row["contact_name"] = ""
+        row["description_clean"] = ""
+        row["primary_image_url"] = ""
+        row["image_count"] = "0"
+
+        assessment = evaluate_publication_quality(row)
+
         self.assertFalse(assessment.publishable)
+
+    def test_listing_with_image_and_contact_ranks_before_missing_image(self) -> None:
+        complete = complete_row()
+        missing_image = complete_row()
+        missing_image["primary_image_url"] = ""
+        missing_image["image_count"] = "0"
+
+        self.assertGreater(
+            publication_sort_key(complete, evaluate_publication_quality(complete)),
+            publication_sort_key(missing_image, evaluate_publication_quality(missing_image)),
+        )
 
     def test_location_is_not_treated_as_contact_name(self) -> None:
         self.assertFalse(is_contact_name("huyện Bình Chánh"))

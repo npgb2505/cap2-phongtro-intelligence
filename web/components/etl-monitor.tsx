@@ -202,7 +202,7 @@ export function EtlMonitor({ data }: Props) {
     {
       order: "05",
       title: "Quality gate và phân phối",
-      description: "Giữ tin có liên hệ và trường cốt lõi; ảnh là tín hiệu ưu tiên khi xếp hạng.",
+      description: "Giữ trường cốt lõi rồi ưu tiên liên hệ, ảnh và mô tả khi xếp hạng.",
       icon: UploadCloud,
       value: summary.published_rows,
       label: "bản ghi xuất bản",

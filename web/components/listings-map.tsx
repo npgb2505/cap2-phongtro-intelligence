@@ -16,7 +16,6 @@ type Props = {
   selectedListingId: string | null;
   focusCoordinate: [number, number] | null;
   onSelectListing: (listingId: string) => void;
-  onRenderStats: (markerCount: number, listingCount: number) => void;
 };
 
 type ViewportRect = {
@@ -144,6 +143,8 @@ function FitVisibleLocations({
   focusCoordinate: [number, number] | null;
 }) {
   const map = useMap();
+  const focusLatitude = focusCoordinate?.[0] ?? null;
+  const focusLongitude = focusCoordinate?.[1] ?? null;
   const bounds = useMemo(() => {
     const points = groups.map((group) => [group.latitude, group.longitude] as [number, number]);
     return points.length > 1 ? L.latLngBounds(points) : null;
@@ -165,8 +166,8 @@ function FitVisibleLocations({
     if (selectedGroup) {
       const zoomByLevel: Record<MapLocationLevel, number> = { exact: 18, street: 17, district: 14, province: 11 };
       moveTo([selectedGroup.latitude, selectedGroup.longitude], zoomByLevel[selectedGroup.level]);
-    } else if (focusCoordinate) {
-      moveTo(focusCoordinate, 15);
+    } else if (focusLatitude !== null && focusLongitude !== null) {
+      moveTo([focusLatitude, focusLongitude], 15);
     } else if (bounds) {
       animationFrame = window.requestAnimationFrame(() => {
         map.stop();
@@ -176,12 +177,12 @@ function FitVisibleLocations({
     }
 
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [bounds, focusCoordinate, map, selectedGroup, selectedListingId]);
+  }, [bounds, focusLatitude, focusLongitude, map, selectedGroup, selectedListingId]);
 
   return null;
 }
 
-export function ListingsMap({ groups, selectedListingId, focusCoordinate, onSelectListing, onRenderStats }: Props) {
+export function ListingsMap({ groups, selectedListingId, focusCoordinate, onSelectListing }: Props) {
   const [viewport, setViewport] = useState<ViewportRect | null>(null);
   const selectedGroup = groups.find((group) =>
     selectedListingId ? group.listingIds.includes(selectedListingId) : false
@@ -231,13 +232,6 @@ export function ListingsMap({ groups, selectedListingId, focusCoordinate, onSele
       });
     return candidates.slice(0, MAX_VIEWPORT_MARKERS);
   }, [groups, selectedListingId, viewport]);
-
-  useEffect(() => {
-    onRenderStats(
-      renderedGroups.length,
-      renderedGroups.reduce((total, group) => total + group.count, 0)
-    );
-  }, [onRenderStats, renderedGroups]);
 
   const centered = selectedGroup ?? groups[0];
   const center: [number, number] = centered

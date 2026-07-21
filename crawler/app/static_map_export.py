@@ -7,7 +7,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
-from app.deploy_snapshot import DEFAULT_SOURCES, build_deploy_snapshot
+from app.deploy_snapshot import DEFAULT_SOURCES, DEFAULT_TOTAL_ROWS, build_deploy_snapshot
 from app.publication_quality import (
     PublicationAssessment,
     evaluate_publication_quality,
@@ -152,6 +152,8 @@ def _etl_monitor_payload(
     curated_geocode_summary: Counter[str],
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     curation_summary = _read_json(source_csv.with_name("curation_summary.json"))
+    if not curation_summary:
+        curation_summary = _read_json(source_csv.with_name("deploy_snapshot_summary.json"))
     generated_at = str(curation_summary.get("generated_at") or datetime.now(UTC).isoformat())
     source_rows = int(curation_summary.get("source_rows") or len(curated_rows))
     duplicate_rows = int(curation_summary.get("duplicate_source_rows") or 0)
@@ -277,14 +279,13 @@ def export_static_map(
         "qualified_source_counts": dict(qualified_source_counts),
         "published_source_counts": dict(source_counts),
         "requirements": [
-            "contact",
             "reasonable_price",
             "valid_area",
             "address",
-            "description",
             "canonical_url",
+            "useful_content",
         ],
-        "ranking_preferences": ["real_image", "direct_contact", "active_status"],
+        "ranking_preferences": ["image_and_contact", "direct_contact", "contact_name", "real_image", "active_status", "description"],
     }
 
     output = {
@@ -333,13 +334,13 @@ def main() -> None:
     parser.add_argument(
         "--source-csv",
         type=Path,
-        default=Path("crawler/artifacts/curated/toan-quoc/listings_curated.csv"),
+        default=Path("crawler/artifacts/deploy/listings_deploy.csv"),
     )
     parser.add_argument("--output-json", type=Path, default=Path("web/public/data/listings-map.json"))
     parser.add_argument("--ensure-snapshot", action="store_true")
     parser.add_argument("--chunk-size", type=int, default=0)
     parser.add_argument("--detail-chunk-size", type=int, default=500)
-    parser.add_argument("--max-rows", type=int, default=50_000)
+    parser.add_argument("--max-rows", type=int, default=55_000)
     parser.add_argument("--include-low-quality", action="store_true")
     args = parser.parse_args()
 
@@ -350,7 +351,7 @@ def main() -> None:
             output_csv=source_csv,
             summary_json=Path("crawler/artifacts/deploy/deploy_snapshot_summary.json").resolve(),
             sources=DEFAULT_SOURCES,
-            per_source=1000,
+            total_rows=DEFAULT_TOTAL_ROWS,
         )
 
     output = export_static_map(

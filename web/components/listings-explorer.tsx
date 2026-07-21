@@ -9,10 +9,8 @@ import {
   Building2,
   ChevronDown,
   Clock3,
-  Database,
   ExternalLink,
   Filter,
-  Image as ImageIcon,
   Link2,
   MapPinOff,
   MapPinned,
@@ -21,11 +19,10 @@ import {
   Phone,
   RotateCcw,
   Search,
-  SlidersHorizontal,
   Workflow,
   X
 } from "lucide-react";
-import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -136,7 +133,9 @@ const PROVINCE_GROUPS: Array<{ name: string; aliases: string[] }> = [
   { name: "Cà Mau", aliases: ["Cà Mau", "Bạc Liêu"] },
   { name: "An Giang", aliases: ["An Giang", "Kiên Giang"] }
 ];
-const CURRENT_PROVINCES = PROVINCE_GROUPS.map((group) => group.name);
+const CURRENT_PROVINCES = PROVINCE_GROUPS
+  .map((group) => group.name)
+  .sort((first, second) => first.localeCompare(second, "vi", { sensitivity: "base" }));
 
 const SOURCE_LABELS: Record<string, string> = {
   phongtro123: "Phongtro123",
@@ -488,12 +487,6 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailedListing, setDetailedListing] = useState<Listing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [mapRenderStats, setMapRenderStats] = useState({ markers: 0, listings: 0 });
-  const handleMapRenderStats = useCallback((markers: number, listings: number) => {
-    setMapRenderStats((current) =>
-      current.markers === markers && current.listings === listings ? current : { markers, listings }
-    );
-  }, []);
 
   const priceOutlierCount = useMemo(
     () => initialData.items.filter((item) => (item.price_value ?? 0) > MAX_REASONABLE_MONTHLY_PRICE).length,
@@ -610,10 +603,13 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
   }, [selectedListingBase]);
   const selectedImage = imageUrl(selectedListing);
   const displayedItems = visibleItems.slice(0, resultLimit);
-  const selectedFocusCoordinate: [number, number] | null =
-    selectedListing && selectedListing.latitude !== null && selectedListing.longitude !== null
-      ? [selectedListing.latitude, selectedListing.longitude]
-      : null;
+  const selectedLatitude = selectedListing?.latitude ?? null;
+  const selectedLongitude = selectedListing?.longitude ?? null;
+  const selectedFocusCoordinate = useMemo<[number, number] | null>(() =>
+    selectedLatitude !== null && selectedLongitude !== null
+      ? [selectedLatitude, selectedLongitude]
+      : null,
+  [selectedLatitude, selectedLongitude]);
   const mapGroups = useMemo(() => buildMapLocationGroups(visibleItems), [visibleItems]);
   const mapLevelCounts = useMemo(() => locationLevelCounts(mapGroups), [mapGroups]);
   const mapGroupByListingId = useMemo(() => {
@@ -762,28 +758,6 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
           </button>
         </nav>
 
-        <div className="header-metrics" aria-label="Tổng quan nhanh">
-          <div>
-            <Database className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
-             <span>Snapshot</span>
-            <strong>{initialData.total.toLocaleString("vi-VN")}</strong>
-          </div>
-          <div>
-            <SlidersHorizontal className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
-             <span>Trong lát cắt</span>
-            <strong>{visibleItems.length.toLocaleString("vi-VN")}</strong>
-          </div>
-          <div>
-            <ImageIcon className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
-             <span>Có ảnh</span>
-            <strong>{imageCount.toLocaleString("vi-VN")}</strong>
-          </div>
-          <div>
-            <MapPinned className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
-             <span>Cụm vị trí</span>
-            <strong>{markerCount.toLocaleString("vi-VN")}</strong>
-          </div>
-        </div>
       </header>
 
       {activeTab !== "monitor" ? <section className={`filter-strip ${filtersExpanded ? "expanded" : ""}`} aria-label="Bộ lọc dữ liệu">
@@ -936,7 +910,6 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
                 <p>Kho dữ liệu</p>
                 <h2>{visibleItems.length.toLocaleString("vi-VN")} bản ghi</h2>
               </div>
-              <span>{markerCount.toLocaleString("vi-VN")} điểm</span>
             </div>
 
             <div className="listing-list">
@@ -1003,14 +976,6 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
                 <h2>{selectedListing ? formatDistrict(selectedListing.district) : "Chọn một tin để xem chi tiết"}</h2>
               </div>
               <div className="toolbar-facts">
-                <span>
-                  Đang vẽ {mapRenderStats.markers.toLocaleString("vi-VN")} / {markerCount.toLocaleString("vi-VN")} vị trí trong khung nhìn,
-                  đại diện {mapRenderStats.listings.toLocaleString("vi-VN")} tin
-                </span>
-                <span>
-                  {mapLevelCounts.exact.toLocaleString("vi-VN")} địa chỉ, {mapLevelCounts.street.toLocaleString("vi-VN")} theo đường,{" "}
-                  {mapLevelCounts.district.toLocaleString("vi-VN")} theo quận
-                </span>
                 {!detailOpen && selectedListing ? (
                   <button className="open-detail-button" type="button" onClick={() => setDetailOpen(true)}>
                     <PanelRightOpen size={15} strokeWidth={1.9} aria-hidden />
@@ -1026,7 +991,6 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
                 selectedListingId={selectedListing?.id ?? null}
                 focusCoordinate={selectedFocusCoordinate}
                 onSelectListing={selectListing}
-                onRenderStats={handleMapRenderStats}
               />
               {selectedListing && (!selectedMapGroup || selectedMapGroup.level !== "exact") ? (
                 <div className="map-quality-notice" role="status">
@@ -1190,7 +1154,7 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
             <div>
               <p>ETL intelligence</p>
               <h2>Từ dữ liệu thô đến tín hiệu thị trường có thể kiểm chứng</h2>
-              <span className="dashboard-intro">Snapshot đa nguồn giữ nguyên vòng đời bản ghi để phục vụ phân tích lịch sử.</span>
+              <span className="dashboard-intro">Dữ liệu đa nguồn giữ nguyên vòng đời bản ghi để phục vụ phân tích lịch sử.</span>
             </div>
             <div className="dashboard-summary">
               <span>Khu vực nổi bật: {topDistrict}</span>
@@ -1235,7 +1199,7 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
               <div className="panel-title">
                 <div>
                   <span>Vòng đời dữ liệu</span>
-                  <h3>Snapshot gồm dữ liệu hiện hành và lịch sử</h3>
+                  <h3>Dữ liệu gồm tin hiện hành và lịch sử</h3>
                 </div>
                 <strong>{visibleItems.length.toLocaleString("vi-VN")}</strong>
               </div>

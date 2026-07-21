@@ -137,17 +137,15 @@ def evaluate_publication_quality(row: dict[str, str]) -> PublicationAssessment:
         freshness_days = _number(row.get("freshness_days"))
         score += 5 if 0 <= freshness_days <= 7 else 3 if freshness_days <= 30 else 0
 
-    publishable = all(
-        (
-            has_direct_contact or has_contact_name,
-            has_valid_price,
-            has_valid_area,
-            has_address,
-            has_description,
-            has_title,
-            has_canonical_url,
-        )
-    )
+    has_useful_content = has_real_image or has_direct_contact or has_contact_name or has_description
+    publishable = all((
+        has_valid_price,
+        has_valid_area,
+        has_address,
+        has_title,
+        has_canonical_url,
+        has_useful_content,
+    ))
     return PublicationAssessment(
         score=min(score, 100),
         publishable=publishable,
@@ -163,12 +161,15 @@ def evaluate_publication_quality(row: dict[str, str]) -> PublicationAssessment:
 
 def publication_sort_key(
     row: dict[str, str], assessment: PublicationAssessment
-) -> tuple[int, int, int, int, int, str]:
+) -> tuple[int, int, int, int, int, int, int, str]:
+    has_contact = assessment.has_direct_contact or assessment.has_contact_name
     return (
-        int(_text(row.get("status")) in {"", "active"}),
+        int(assessment.has_real_image and has_contact),
         int(assessment.has_direct_contact),
+        int(assessment.has_contact_name),
+        int(assessment.has_real_image),
+        int(_text(row.get("status")) in {"", "active"}),
         assessment.score,
-        int(_number(row.get("image_count"))),
         int(_number(row.get("record_completeness_score"))),
         _text(row.get("posted_at")),
     )
