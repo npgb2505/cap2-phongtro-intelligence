@@ -230,6 +230,7 @@ def export_static_map(
     output = {
         "total": len(items),
         "returned": len(items),
+        "dataset_version": str(etl_summary["generated_at"]),
         "available_provinces": available_provinces,
         "geocode_summary": dict(geocode_summary),
         "deploy_source_counts": dict(source_counts),

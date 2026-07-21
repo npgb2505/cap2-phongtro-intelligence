@@ -24,6 +24,7 @@ const DETAIL_FIELDS = [
 ].join(",");
 
 const detailChunkCache = new Map<string, Promise<Map<string, Partial<Listing>>>>();
+let staticDatasetVersion: string | null = null;
 
 type SupabaseRow = Record<string, unknown>;
 
@@ -77,6 +78,15 @@ function resolveChunkUrl(manifestUrl: string, chunkPath: string) {
   return new URL(chunkPath, baseUrl).toString();
 }
 
+function versionedStaticUrl(url: string, version = staticDatasetVersion) {
+  if (!version || typeof window === "undefined") {
+    return url;
+  }
+  const resolved = new URL(url, window.location.origin);
+  resolved.searchParams.set("dataset", version);
+  return resolved.toString();
+}
+
 function dedupeListings(items: Listing[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -115,6 +125,8 @@ async function fetchJson(url: string): Promise<ListingMapResponse> {
   }
 
   const payload = (await response.json()) as ListingMapResponse;
+  const datasetVersion = payload.dataset_version ?? payload.etl_summary?.generated_at ?? null;
+  staticDatasetVersion = datasetVersion;
   if (!payload.chunks?.length) {
     const items = dedupeListings(payload.items ?? []);
     return {
@@ -129,7 +141,7 @@ async function fetchJson(url: string): Promise<ListingMapResponse> {
     payload.chunks,
     STATIC_CHUNK_CONCURRENCY,
     async (chunkPath) => {
-      const chunkUrl = resolveChunkUrl(url, chunkPath);
+      const chunkUrl = versionedStaticUrl(resolveChunkUrl(url, chunkPath), datasetVersion);
       const chunkResponse = await fetch(chunkUrl, { cache: "default" });
       if (!chunkResponse.ok) {
         throw new Error(`Failed to load chunk ${chunkUrl}`);
@@ -388,7 +400,7 @@ export async function fetchMapListings(): Promise<ListingMapResponse> {
 
 export async function fetchListingDetails(listing: Listing): Promise<Listing> {
   if (listing.detail_path) {
-    const detailUrl = resolveChunkUrl(staticDataUrl(), listing.detail_path);
+    const detailUrl = versionedStaticUrl(resolveChunkUrl(staticDataUrl(), listing.detail_path));
     let cached = detailChunkCache.get(detailUrl);
     if (!cached) {
       cached = fetch(detailUrl, { cache: "force-cache" }).then(async (response) => {

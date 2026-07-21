@@ -66,6 +66,7 @@ export type ListingMapResponse = {
   chunk_size?: number;
   detail_chunk_size?: number;
   dataset_mode?: string;
+  dataset_version?: string;
   skipped_rows?: number;
   etl_summary?: EtlSummary;
   etl_runs?: EtlRun[];

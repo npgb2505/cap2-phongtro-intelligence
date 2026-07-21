@@ -50,6 +50,7 @@ class StaticMapExportTests(unittest.TestCase):
             )
 
             self.assertEqual(manifest["dataset_mode"], "chunked-index-with-lazy-details")
+            self.assertEqual(manifest["dataset_version"], "2026-07-15T03:00:00+00:00")
             self.assertEqual(len(manifest["chunks"]), 2)
             self.assertEqual(manifest["etl_summary"]["source_rows"], 5)
             self.assertEqual(manifest["etl_summary"]["published_rows"], 3)
