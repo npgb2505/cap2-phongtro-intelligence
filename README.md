@@ -38,7 +38,7 @@ Frontend
     -> map view
     -> marker popups
     -> sidebar result list
-    -> 20,000-row quality-gated snapshot split into lazy JSON chunks
+    -> 50,000-row quality-gated snapshot split into lazy JSON chunks
 ```
 
 ## Repo layout

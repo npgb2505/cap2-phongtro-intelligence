@@ -139,7 +139,6 @@ def evaluate_publication_quality(row: dict[str, str]) -> PublicationAssessment:
 
     publishable = all(
         (
-            has_real_image,
             has_direct_contact or has_contact_name,
             has_valid_price,
             has_valid_area,

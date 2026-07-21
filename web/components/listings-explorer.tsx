@@ -775,7 +775,7 @@ export function ListingsExplorer({ initialData, isLoading = false, loadError = n
           </div>
           <div>
             <ImageIcon className="metric-icon" size={16} strokeWidth={1.9} aria-hidden />
-             <span>Ảnh hợp lệ</span>
+             <span>Có ảnh</span>
             <strong>{imageCount.toLocaleString("vi-VN")}</strong>
           </div>
           <div>

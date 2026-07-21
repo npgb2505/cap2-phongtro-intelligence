@@ -277,7 +277,6 @@ def export_static_map(
         "qualified_source_counts": dict(qualified_source_counts),
         "published_source_counts": dict(source_counts),
         "requirements": [
-            "real_image",
             "contact",
             "reasonable_price",
             "valid_area",
@@ -285,6 +284,7 @@ def export_static_map(
             "description",
             "canonical_url",
         ],
+        "ranking_preferences": ["real_image", "direct_contact", "active_status"],
     }
 
     output = {
@@ -339,7 +339,7 @@ def main() -> None:
     parser.add_argument("--ensure-snapshot", action="store_true")
     parser.add_argument("--chunk-size", type=int, default=0)
     parser.add_argument("--detail-chunk-size", type=int, default=500)
-    parser.add_argument("--max-rows", type=int, default=20_000)
+    parser.add_argument("--max-rows", type=int, default=50_000)
     parser.add_argument("--include-low-quality", action="store_true")
     args = parser.parse_args()
 

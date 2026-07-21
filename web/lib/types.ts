@@ -83,6 +83,7 @@ export type ListingMapResponse = {
     qualified_source_counts: Record<string, number>;
     published_source_counts: Record<string, number>;
     requirements: string[];
+    ranking_preferences?: string[];
   };
   etl_summary?: EtlSummary;
   etl_runs?: EtlRun[];

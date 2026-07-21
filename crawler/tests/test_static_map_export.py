@@ -76,7 +76,7 @@ class StaticMapExportTests(unittest.TestCase):
             self.assertEqual(rebuilt[0]["description_clean"], "Mô tả dài chỉ tải khi mở chi tiết")
             self.assertEqual(len(rebuilt[0]["content_hash"]), 64)
 
-    def test_quality_gate_rejects_placeholders_and_keeps_best_rows(self) -> None:
+    def test_quality_gate_allows_missing_images_and_keeps_best_rows(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = root / "curated.csv"
@@ -136,9 +136,9 @@ class StaticMapExportTests(unittest.TestCase):
             )
 
             self.assertEqual(manifest["total"], 1)
-            self.assertEqual(manifest["quality_summary"]["qualified_rows"], 2)
-            self.assertEqual(manifest["quality_summary"]["rejected_low_quality_rows"], 1)
-            self.assertEqual(manifest["quality_summary"]["trimmed_rows"], 1)
+            self.assertEqual(manifest["quality_summary"]["qualified_rows"], 3)
+            self.assertEqual(manifest["quality_summary"]["rejected_low_quality_rows"], 0)
+            self.assertEqual(manifest["quality_summary"]["trimmed_rows"], 2)
             self.assertEqual(manifest["items"][0]["id"], "active-direct")
             self.assertTrue(manifest["items"][0]["has_direct_contact"])
 

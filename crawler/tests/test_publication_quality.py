@@ -35,14 +35,15 @@ class PublicationQualityTests(unittest.TestCase):
         self.assertTrue(assessment.has_direct_contact)
         self.assertGreaterEqual(assessment.score, 90)
 
-    def test_placeholder_image_is_rejected(self) -> None:
+    def test_placeholder_image_is_allowed_but_scores_lower(self) -> None:
         row = complete_row()
         row["primary_image_url"] = "https://phongtro123.com/images/thumb_default.svg"
 
         assessment = evaluate_publication_quality(row)
 
-        self.assertFalse(assessment.publishable)
+        self.assertTrue(assessment.publishable)
         self.assertFalse(assessment.has_real_image)
+        self.assertLess(assessment.score, evaluate_publication_quality(complete_row()).score)
 
     def test_listing_without_contact_is_rejected(self) -> None:
         row = complete_row()

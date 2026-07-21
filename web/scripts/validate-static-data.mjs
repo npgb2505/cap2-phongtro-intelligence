@@ -23,8 +23,8 @@ if (!Array.isArray(manifest.chunks) || manifest.chunks.length === 0) {
 if (Number(manifest.total) < 10_000) {
   throw new Error(`Static manifest only contains ${manifest.total} rows`);
 }
-if (Number(manifest.total) > 20_000) {
-  throw new Error(`Static manifest exceeds the 20,000-row public quality cap: ${manifest.total}`);
+if (Number(manifest.total) > 50_000) {
+  throw new Error(`Static manifest exceeds the 50,000-row public quality cap: ${manifest.total}`);
 }
 if (!manifest.quality_summary?.enabled) {
   throw new Error("Static manifest quality gate is not enabled");
@@ -46,6 +46,8 @@ const ids = new Set();
 const detailPaths = new Set();
 const invalidProvinces = new Set();
 let indexRows = 0;
+let imageRows = 0;
+let noImageRows = 0;
 
 for (const chunkPath of manifest.chunks) {
   const payload = JSON.parse(await readFile(path.join(dataRoot, chunkPath), "utf8"));
@@ -61,13 +63,13 @@ for (const chunkPath of manifest.chunks) {
     if (!item.detail_path) {
       throw new Error(`Listing ${item.id} has no lazy detail path`);
     }
-    if (!/^https?:\/\//i.test(item.thumbnail_url ?? "") || /(?:thumb_default|no[-_]image|placeholder|default[-_]image)/i.test(item.thumbnail_url)) {
-      throw new Error(`Listing ${item.id} has no real public image`);
-    }
+    const hasRealImage = /^https?:\/\//i.test(item.thumbnail_url ?? "") && !/(?:thumb_default|no[-_]image|placeholder|default[-_]image)/i.test(item.thumbnail_url);
+    imageRows += hasRealImage ? 1 : 0;
+    noImageRows += hasRealImage ? 0 : 1;
     if (!item.has_direct_contact && !item.has_contact_name) {
       throw new Error(`Listing ${item.id} has no usable contact`);
     }
-    if (Number(item.publication_quality_score) < 70) {
+    if (Number(item.publication_quality_score) < 60) {
       throw new Error(`Listing ${item.id} has a low publication quality score`);
     }
     if (Number(item.price_value) < 300_000 || Number(item.price_value) > 30_000_000) {
@@ -130,6 +132,8 @@ console.log(JSON.stringify({
   detailChunks: detailPaths.size,
   provinces: manifest.available_provinces?.length ?? 0,
   etlRuns: manifest.etl_runs.length,
+  imageRows,
+  noImageRows,
   rejectedLowQuality: manifest.quality_summary.rejected_low_quality_rows,
   trimmedRows: manifest.quality_summary.trimmed_rows
 }));

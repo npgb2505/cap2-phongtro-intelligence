@@ -15,7 +15,7 @@ try {
         --output-json "web\public\data\listings-map.json" `
         --chunk-size 5000 `
         --detail-chunk-size 500 `
-        --max-rows 20000
+        --max-rows 50000
     exit $LASTEXITCODE
 }
 finally {

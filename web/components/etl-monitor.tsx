@@ -147,6 +147,7 @@ export function EtlMonitor({ data }: Props) {
   const qualityQualified = qualitySummary?.qualified_rows ?? summary.curated_rows;
   const qualityInput = qualitySummary?.valid_source_rows ?? summary.curated_rows;
   const qualityRate = percent(qualityQualified, qualityInput);
+  const publicCapLabel = `${Math.round(summary.published_rows / 1000)}k`;
   const runChart = runs.map((run) => ({
     ...run,
     label: formatRunDate(run.date)
@@ -154,7 +155,7 @@ export function EtlMonitor({ data }: Props) {
   const qualityEvents = [
     { label: "Bản ghi trùng", value: summary.duplicate_rows },
     { label: "Thiếu dữ liệu", value: qualitySummary?.rejected_low_quality_rows ?? summary.rejected_rows },
-    { label: "Ngoài top 20k", value: qualitySummary?.trimmed_rows ?? 0 },
+    { label: `Ngoài top ${publicCapLabel}`, value: qualitySummary?.trimmed_rows ?? 0 },
     { label: "Chưa định vị", value: summary.unresolved_geocode_rows }
   ];
   const layers = [
@@ -201,7 +202,7 @@ export function EtlMonitor({ data }: Props) {
     {
       order: "05",
       title: "Quality gate và phân phối",
-      description: "Giữ tin có ảnh thật, liên hệ và trường cốt lõi trước khi đóng gói public.",
+      description: "Giữ tin có liên hệ và trường cốt lõi; ảnh là tín hiệu ưu tiên khi xếp hạng.",
       icon: UploadCloud,
       value: summary.published_rows,
       label: "bản ghi xuất bản",
