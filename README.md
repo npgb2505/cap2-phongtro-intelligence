@@ -158,10 +158,10 @@ For the older database-backed fallback with Neon, Render, and Vercel, see [docs/
 For the current online deployment status, see [docs/online-deploy-status.md](docs/online-deploy-status.md).
 For the final Vietnamese completion report, see [docs/bao-cao-hoan-thien.md](docs/bao-cao-hoan-thien.md).
 
-The public Render URL is recorded after the first deployment in:
+Live free Render deployment:
 
 ```text
-docs/online-deploy-status.md
+https://phongtro-intelligence.onrender.com
 ```
 
 ### 4. Frontend

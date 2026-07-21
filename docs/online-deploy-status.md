@@ -41,9 +41,19 @@ Production sources:            3
 
 ## Public deployment
 
-Status: waiting for the first Render Blueprint deployment from the reviewed commit.
+Status: live and verified.
 
-Public URL: pending
+Public URL: `https://phongtro-intelligence.onrender.com`
+
+```text
+Blueprint: phongtro-intelligence
+Blueprint ID: exs-d9fjrmurnols73c4j8ng
+Service type: Static Site
+Service ID: srv-d9fjrsgk1i2s73b01qfg
+Initial live commit: e382e9d
+```
+
+The public deployment was verified with 117,320 snapshot rows, 117,201 rows after the default outlier rule, 3,891 map clusters, all analytics charts, the five-layer ETL monitor, no console warnings/errors, and no horizontal overflow at a mobile viewport.
 
 Deployment instructions: [render-free-deployment.md](render-free-deployment.md).
 
