@@ -1,4 +1,8 @@
-# Cap2 Handover
+# Cap2 Handover — Historical Local Snapshot
+
+> This file records the local handover state verified on 2026-07-06. It is
+> retained for operational history. For the current public snapshot and live
+> deployment, see [online-deploy-status.md](online-deploy-status.md).
 
 Last verified: 2026-07-06
 

@@ -1,6 +1,6 @@
 # Online Deploy Status
 
-Updated: 2026-07-21
+Updated: 2026-07-24
 
 ## Selected production path
 
@@ -20,20 +20,22 @@ The public website does not depend on a paid server or database. Supabase is opt
 ## Verified release snapshot
 
 ```text
-Index rows:               20,000
-Detail rows:              20,000
-Index chunks:                  4
-Lazy detail chunks:           40
-Source provinces:             36
-ETL runs in manifest:          2
-Production sources:            2
+Input rows:               58,595
+Index rows:               53,397
+Detail rows:              53,397
+Index chunks:                 11
+Lazy detail chunks:          107
+Source provinces:             39
+ETL runs in manifest:          1
+Production sources:            3
+Quality-gate retention:     91.1%
 ```
 
 ## Release checks
 
 - ESLint: passed.
 - Static-data integrity validator: passed.
-- Crawler test suite: 24 passed.
+- Crawler test suite: 29 passed.
 - Next.js production static export: passed.
 - Desktop static build: map, analysis dashboard, and ETL monitor verified.
 - No tracked environment file or credential detected.
@@ -53,7 +55,12 @@ Service ID: srv-d9fjrsgk1i2s73b01qfg
 Initial live commit: e382e9d
 ```
 
-The current release uses a 20,000-row quality-gated snapshot. Every public row has a real image, usable contact, reasonable price, valid area, address, description, and canonical source URL. Active rows and direct contact channels rank first.
+The current release uses a 53,397-row quality-gated snapshot from
+Phongtro123, Mogi, and NhaTot. It was produced by run
+`etl-20260721T121656Z-d3cd1939` with pipeline version
+`production-quality-v3`. Of 58,595 input rows, 5,198 did not pass the
+reproducible publication rules. The public snapshot contains 53,394 rows with
+images and 34,032 rows with contact data.
 
 Deployment instructions: [render-free-deployment.md](render-free-deployment.md).
 
