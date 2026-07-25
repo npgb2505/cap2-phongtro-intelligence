@@ -7,6 +7,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const SUPABASE_VIEW = process.env.NEXT_PUBLIC_SUPABASE_LISTINGS_VIEW ?? "v_listing_map";
 const SUPABASE_PAGE_SIZE = clampNumber(process.env.NEXT_PUBLIC_SUPABASE_PAGE_SIZE, 1000, 100, 5000);
 const SUPABASE_MAX_ROWS = clampNumber(process.env.NEXT_PUBLIC_SUPABASE_MAX_ROWS, 60000, 1000, 100000);
+const SUPABASE_PAGE_CONCURRENCY = 4;
 const STATIC_CHUNK_CONCURRENCY = 4;
 
 const INDEX_FIELDS = [
@@ -166,7 +167,7 @@ function hasSupabaseConfig() {
 function supabaseEndpoint(select = INDEX_FIELDS, id?: string) {
   const params = new URLSearchParams({
     select,
-    order: "updated_at.desc.nullslast"
+    order: "id.asc"
   });
   if (id) {
     params.set("id", `eq.${id}`);
@@ -343,36 +344,63 @@ async function fetchSupabaseListings(): Promise<ListingMapResponse> {
     throw new Error("Supabase env is not configured");
   }
 
-  const items: ReturnType<typeof toListing>[] = [];
-  let total: number | undefined;
+  async function fetchPage(start: number, end: number, includeCount = false) {
+    const headers: Record<string, string> = {
+      apikey: SUPABASE_ANON_KEY as string,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Range: `${start}-${end}`,
+      "Range-Unit": "items"
+    };
+    if (includeCount) {
+      headers.Prefer = "count=exact";
+    }
 
-  for (let start = 0; start < SUPABASE_MAX_ROWS; start += SUPABASE_PAGE_SIZE) {
-    const end = Math.min(start + SUPABASE_PAGE_SIZE - 1, SUPABASE_MAX_ROWS - 1);
     const response = await fetch(supabaseEndpoint(), {
       cache: "no-store",
-      headers: {
-        apikey: SUPABASE_ANON_KEY as string,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: "count=exact",
-        Range: `${start}-${end}`,
-        "Range-Unit": "items"
-      }
+      headers
     });
 
     if (!response.ok) {
       throw new Error(`Failed to load Supabase listings: ${response.status}`);
     }
 
-    total ??= parseContentRange(response.headers.get("content-range")) ?? undefined;
-    const rows = (await response.json()) as SupabaseRow[];
-    items.push(...rows.map(toListing));
+    return {
+      rows: (await response.json()) as SupabaseRow[],
+      total: includeCount ? parseContentRange(response.headers.get("content-range")) ?? undefined : undefined
+    };
+  }
 
-    if (rows.length < SUPABASE_PAGE_SIZE || (total !== undefined && items.length >= total)) {
-      break;
+  const firstPage = await fetchPage(0, SUPABASE_PAGE_SIZE - 1, true);
+  const rows = [...firstPage.rows];
+  if (!rows.length) {
+    return buildResponseFromItems([], firstPage.total);
+  }
+
+  const pageSpan = rows.length;
+  if (firstPage.total !== undefined) {
+    const cappedTotal = Math.min(firstPage.total, SUPABASE_MAX_ROWS);
+    const pageStarts = [];
+    for (let start = pageSpan; start < cappedTotal; start += pageSpan) {
+      pageStarts.push(start);
+    }
+
+    const remainingPages = await mapWithConcurrency(
+      pageStarts,
+      SUPABASE_PAGE_CONCURRENCY,
+      (start) => fetchPage(start, Math.min(start + pageSpan - 1, cappedTotal - 1))
+    );
+    rows.push(...remainingPages.flatMap((page) => page.rows));
+  } else {
+    for (let start = pageSpan; start < SUPABASE_MAX_ROWS; start += pageSpan) {
+      const page = await fetchPage(start, Math.min(start + pageSpan - 1, SUPABASE_MAX_ROWS - 1));
+      rows.push(...page.rows);
+      if (page.rows.length < pageSpan) {
+        break;
+      }
     }
   }
 
-  return buildResponseFromItems(items, total);
+  return buildResponseFromItems(rows.map(toListing), firstPage.total);
 }
 
 export async function fetchMapListings(): Promise<ListingMapResponse> {
