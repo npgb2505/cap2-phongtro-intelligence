@@ -91,6 +91,21 @@ export type ListingMapResponse = {
   };
   etl_summary?: EtlSummary;
   etl_runs?: EtlRun[];
+  incremental_batch?: {
+    workflow_run_id: string;
+    discovered_urls: number;
+    parsed_rows: number;
+    failed_urls: number;
+    upserted_rows: number;
+    net_new_rows: number;
+    existing_updated_rows: number;
+  };
+  delivery_summary?: {
+    primary: string;
+    static_fallback_total: number;
+    static_index_chunks: number;
+    static_detail_chunks: number;
+  };
   items: Listing[];
 };
 

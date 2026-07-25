@@ -58,7 +58,7 @@ function percent(value: number, total: number) {
 }
 
 function formatPercent(value: number) {
-  return `${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`;
+  return `${value.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`;
 }
 
 function formatDuration(value?: number | null) {
@@ -159,8 +159,9 @@ export function EtlMonitor({ data }: Props) {
   const qualityInput = qualitySummary?.valid_source_rows ?? summary.curated_rows;
   const coreRejected = qualitySummary?.rejected_core_quality_rows ?? qualitySummary?.rejected_low_quality_rows ?? 0;
   const scoreRejected = qualitySummary?.rejected_score_rows ?? 0;
-  const totalRemoved = Math.max(summary.source_rows - summary.published_rows, 0);
   const qualityRate = percent(qualityQualified, qualityInput);
+  const baselineRows = summary.source_rows;
+  const latestBatch = data.incremental_batch;
   const runChart = runs.map((run) => ({
     ...run,
     quality_qualified_rows: run.quality_qualified_rows ?? run.published_rows,
@@ -194,8 +195,11 @@ export function EtlMonitor({ data }: Props) {
       icon: GitBranch,
       value: summary.deduplicated_rows,
       label: "bản ghi sạch, duy nhất",
-      ratio: percent(summary.deduplicated_rows, summary.source_rows),
-      facts: [`${sourceRejected.toLocaleString("vi-VN")} dòng nguồn lỗi`, `${summary.duplicate_rows.toLocaleString("vi-VN")} bản ghi trùng`]
+      ratio: percent(summary.deduplicated_rows, baselineRows),
+      facts: [
+        `${sourceRejected.toLocaleString("vi-VN")} dòng nguồn lỗi`,
+        `${summary.duplicate_rows.toLocaleString("vi-VN")} khóa đã tồn tại được cập nhật`
+      ]
     },
     {
       order: "03",
@@ -204,38 +208,45 @@ export function EtlMonitor({ data }: Props) {
       icon: Layers3,
       value: summary.curated_rows,
       label: "bản ghi đã chuẩn hóa",
-      ratio: percent(summary.curated_rows, summary.deduplicated_rows),
+      ratio: percent(summary.curated_rows, baselineRows),
       facts: ["Giá và diện tích về kiểu số", "Địa chỉ và liên hệ về schema chung"]
     },
     {
       order: "04",
-      title: "Chuẩn hóa và geocode",
+      title: "Đánh giá vị trí và geocode",
       description: "Phân loại độ chính xác địa chỉ và gắn tọa độ phù hợp cho từng bản ghi.",
       icon: ScanSearch,
       value: summary.located_rows,
-      label: "bản ghi có mức vị trí",
-      ratio: percent(summary.located_rows, summary.curated_rows),
+      label: "bản ghi có tọa độ",
+      ratio: percent(summary.located_rows, baselineRows),
       facts: [`${summary.exact_geocoded_rows.toLocaleString("vi-VN")} địa chỉ chính xác`, `${summary.unresolved_geocode_rows.toLocaleString("vi-VN")} chưa định vị`]
     },
     {
       order: "05",
-      title: "Quality gate có ngưỡng",
+      title: "Kiểm soát chất lượng",
       description: "Kiểm tra trường cốt lõi và yêu cầu điểm chất lượng tối thiểu có thể tái lập.",
       icon: ShieldCheck,
       value: qualityQualified,
       label: "bản ghi qua quality gate",
-      ratio: percent(qualityQualified, summary.curated_rows),
+      ratio: percent(qualityQualified, baselineRows),
       facts: [`${coreRejected.toLocaleString("vi-VN")} thiếu trường cốt lõi`, `${scoreRejected.toLocaleString("vi-VN")} điểm dưới ${qualitySummary?.minimum_score ?? 0}`]
     },
     {
       order: "06",
-      title: "Đóng gói và phân phối",
-      description: "Chia index và chi tiết thành các chunk để phục vụ web tĩnh trên Render.",
+      title: "Nạp và phân phối",
+      description: "Upsert dữ liệu đạt chuẩn vào Supabase; Render đọc view công khai và giữ snapshot tĩnh làm phương án dự phòng.",
       icon: UploadCloud,
       value: summary.published_rows,
       label: "bản ghi xuất bản",
-      ratio: percent(summary.published_rows, qualityQualified),
-      facts: [`Không cắt theo quota tròn`, `${data.chunks?.length ?? 0} index + ${Math.ceil(summary.published_rows / (data.detail_chunk_size ?? 500))} detail chunk`]
+      ratio: percent(summary.published_rows, baselineRows),
+      facts: [
+        latestBatch
+          ? `Lượt gần nhất: +${latestBatch.net_new_rows.toLocaleString("vi-VN")} mới, ${latestBatch.existing_updated_rows.toLocaleString("vi-VN")} cập nhật`
+          : "Không cắt theo quota tròn",
+        data.delivery_summary
+          ? `Fallback tĩnh: ${data.delivery_summary.static_index_chunks} index + ${data.delivery_summary.static_detail_chunks} detail chunk`
+          : "Supabase view phục vụ dữ liệu hiện hành"
+      ]
     }
   ];
 
@@ -265,14 +276,7 @@ export function EtlMonitor({ data }: Props) {
         <div><CalendarClock size={17} strokeWidth={1.9} aria-hidden /><span>Phiên bản pipeline</span><strong>{summary.pipeline_version ?? "Chưa xác định"}</strong></div>
       </div>
 
-      <section className="etl-pipeline-shell" aria-labelledby="etl-pipeline-title">
-        <div className="etl-section-heading">
-          <div>
-            <h3 id="etl-pipeline-title">Data spine</h3>
-            <p>Mỗi lớp chỉ chuyển tiếp dữ liệu đã vượt qua checkpoint trước đó.</p>
-          </div>
-          <span>{totalRemoved.toLocaleString("vi-VN")} bản ghi không qua quality gate</span>
-        </div>
+      <section className="etl-pipeline-shell" aria-label="Sáu lớp xử lý ETL">
         <div className="etl-layer-stack">
           {layers.map((layer) => {
             const Icon = layer.icon;
@@ -290,7 +294,7 @@ export function EtlMonitor({ data }: Props) {
                 <div className="etl-layer-throughput">
                   <strong>{layer.value.toLocaleString("vi-VN")}</strong>
                   <span>{layer.label}</span>
-                  <div className="etl-progress" aria-label={`${formatPercent(layer.ratio)} được giữ lại`}>
+                  <div className="etl-progress" aria-label={`${formatPercent(layer.ratio)} so với đầu vào`}>
                     <i style={{ width: `${layer.ratio}%` }} />
                   </div>
                 </div>

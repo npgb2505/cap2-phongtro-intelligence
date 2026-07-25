@@ -28,6 +28,16 @@ const detailChunkCache = new Map<string, Promise<Map<string, Partial<Listing>>>>
 let staticDatasetVersion: string | null = null;
 
 type SupabaseRow = Record<string, unknown>;
+type EtlTelemetry = Pick<
+  ListingMapResponse,
+  | "dataset_version"
+  | "geocode_summary"
+  | "quality_summary"
+  | "etl_summary"
+  | "etl_runs"
+  | "incremental_batch"
+  | "delivery_summary"
+>;
 
 export const emptyMapListings: ListingMapResponse = {
   total: 0,
@@ -67,6 +77,10 @@ function dataUrls() {
   }
   urls.push(staticDataUrl());
   return Array.from(new Set(urls));
+}
+
+function etlTelemetryUrl() {
+  return resolveChunkUrl(staticDataUrl(), "etl-production.json");
 }
 
 function resolveChunkUrl(manifestUrl: string, chunkPath: string) {
@@ -339,6 +353,68 @@ function buildResponseFromItems(items: ReturnType<typeof toListing>[], total?: n
   };
 }
 
+async function fetchEtlTelemetry(): Promise<EtlTelemetry | null> {
+  try {
+    const response = await fetch(etlTelemetryUrl(), { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as EtlTelemetry;
+  } catch {
+    return null;
+  }
+}
+
+function mergeLiveTelemetry(data: ListingMapResponse, telemetry: EtlTelemetry | null): ListingMapResponse {
+  if (!telemetry?.etl_summary || !telemetry.quality_summary) {
+    return data;
+  }
+
+  const baselinePublished = telemetry.etl_summary.published_rows;
+  const liveDelta = data.total - baselinePublished;
+  const liveLocated = data.total - (data.geocode_summary.none ?? 0);
+  const telemetryLocated = baselinePublished - (telemetry.geocode_summary.none ?? 0);
+  const locatedDelta = liveLocated - telemetryLocated;
+  const statusCounts = data.items.reduce<Record<string, number>>((acc, item) => {
+    acc[item.status] = (acc[item.status] ?? 0) + 1;
+    return acc;
+  }, {});
+  const summary: NonNullable<ListingMapResponse["etl_summary"]> = {
+    ...telemetry.etl_summary,
+    source_rows: Math.max(data.total, telemetry.etl_summary.source_rows + liveDelta),
+    deduplicated_rows: Math.max(data.total, telemetry.etl_summary.deduplicated_rows + liveDelta),
+    curated_rows: Math.max(data.total, telemetry.etl_summary.curated_rows + liveDelta),
+    located_rows: Math.max(liveLocated, telemetry.etl_summary.located_rows + locatedDelta),
+    exact_geocoded_rows: data.geocode_summary.exact ?? 0,
+    unresolved_geocode_rows: data.geocode_summary.none ?? 0,
+    quality_qualified_rows: data.total,
+    published_rows: data.total,
+    source_counts: data.deploy_source_counts ?? telemetry.etl_summary.source_counts,
+    status_counts: statusCounts
+  };
+  const qualitySummary: NonNullable<ListingMapResponse["quality_summary"]> = {
+    ...telemetry.quality_summary,
+    input_rows: summary.source_rows,
+    valid_source_rows: summary.deduplicated_rows,
+    core_qualified_rows: data.total + (telemetry.quality_summary.rejected_score_rows ?? 0),
+    qualified_rows: data.total,
+    published_rows: data.total,
+    qualified_source_counts: data.deploy_source_counts ?? telemetry.quality_summary.qualified_source_counts,
+    published_source_counts: data.deploy_source_counts ?? telemetry.quality_summary.published_source_counts
+  };
+
+  return {
+    ...data,
+    dataset_version: telemetry.dataset_version,
+    skipped_rows: Math.max(summary.source_rows - data.total, 0),
+    quality_summary: qualitySummary,
+    etl_summary: summary,
+    etl_runs: telemetry.etl_runs,
+    incremental_batch: telemetry.incremental_batch,
+    delivery_summary: telemetry.delivery_summary
+  };
+}
+
 async function fetchSupabaseListings(): Promise<ListingMapResponse> {
   if (!hasSupabaseConfig()) {
     throw new Error("Supabase env is not configured");
@@ -408,7 +484,11 @@ export async function fetchMapListings(): Promise<ListingMapResponse> {
 
   if (hasSupabaseConfig()) {
     try {
-      return await fetchSupabaseListings();
+      const [listings, telemetry] = await Promise.all([
+        fetchSupabaseListings(),
+        fetchEtlTelemetry()
+      ]);
+      return mergeLiveTelemetry(listings, telemetry);
     } catch (error) {
       errors.push(error);
     }

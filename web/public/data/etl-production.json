@@ -1,0 +1,157 @@
+{
+  "dataset_version": "2026-07-25T14:13:24Z",
+  "geocode_summary": {
+    "district": 36056,
+    "province": 4245,
+    "exact": 13096,
+    "none": 10
+  },
+  "quality_summary": {
+    "enabled": true,
+    "minimum_score": 68,
+    "input_rows": 58610,
+    "valid_source_rows": 58605,
+    "core_qualified_rows": 57634,
+    "qualified_rows": 53407,
+    "published_rows": 53407,
+    "rejected_invalid_source_rows": 0,
+    "rejected_core_quality_rows": 971,
+    "rejected_score_rows": 4227,
+    "rejected_low_quality_rows": 5198,
+    "trimmed_rows": 0,
+    "qualified_source_counts": {
+      "phongtro123": 22267,
+      "mogi": 18043,
+      "nhatot": 13097
+    },
+    "published_source_counts": {
+      "phongtro123": 22267,
+      "mogi": 18043,
+      "nhatot": 13097
+    },
+    "requirements": [
+      "reasonable_price",
+      "valid_area",
+      "address",
+      "canonical_url",
+      "useful_content",
+      "publication_quality_score_gte_68"
+    ],
+    "ranking_preferences": [
+      "image_and_contact",
+      "direct_contact",
+      "contact_name",
+      "real_image",
+      "active_status",
+      "description"
+    ]
+  },
+  "etl_summary": {
+    "run_id": "gha-30161170758",
+    "pipeline_version": "supabase-incremental-v1",
+    "run_mode": "incremental-cumulative",
+    "generated_at": "2026-07-25T14:11:57Z",
+    "source_generated_at": "2026-07-25T14:11:57Z",
+    "status": "success",
+    "source_rows": 58610,
+    "source_rejected_rows": 0,
+    "deduplicated_rows": 58605,
+    "duplicate_rows": 5,
+    "rejected_rows": 5198,
+    "curated_rows": 58605,
+    "located_rows": 58595,
+    "exact_geocoded_rows": 13096,
+    "unresolved_geocode_rows": 10,
+    "quality_qualified_rows": 53407,
+    "published_rows": 53407,
+    "duration_seconds": 87.5,
+    "stage_durations_seconds": {
+      "crawl_and_transform": 33.9,
+      "load_and_verify": 20.2,
+      "setup_and_dependencies": 33.4
+    },
+    "published_at": "2026-07-25T14:13:24Z",
+    "input_source_counts": {
+      "phongtro123": 22271,
+      "mogi": 22271,
+      "nhatot": 14068
+    },
+    "source_counts": {
+      "phongtro123": 22267,
+      "mogi": 18043,
+      "nhatot": 13097
+    },
+    "status_counts": {
+      "active": 31297,
+      "expired": 22110
+    }
+  },
+  "etl_runs": [
+    {
+      "run_id": "etl-20260721T121656Z-d3cd1939",
+      "pipeline_version": "production-quality-v3",
+      "run_mode": "budgeted_source_ingestion",
+      "dataset_fingerprint": "d3cd193949ffdd25",
+      "date": "2026-07-21",
+      "generated_at": "2026-07-21T12:16:56.547504+00:00",
+      "status": "success",
+      "source_rows": 58595,
+      "deduplicated_rows": 58595,
+      "curated_rows": 58595,
+      "rejected_rows": 5198,
+      "located_rows": 58585,
+      "quality_qualified_rows": 53397,
+      "published_rows": 53397,
+      "duration_seconds": 8.646,
+      "stage_durations_seconds": {
+        "ingest_and_transform": 5.112,
+        "static_export": 3.534
+      },
+      "input_source_counts": {
+        "phongtro123": 22266,
+        "mogi": 22266,
+        "nhatot": 14063
+      },
+      "source_generated_at": "2026-07-21T12:16:56.547504+00:00",
+      "published_at": "2026-07-21T12:17:00.530999+00:00"
+    },
+    {
+      "run_id": "gha-30161170758",
+      "pipeline_version": "supabase-incremental-v1",
+      "run_mode": "incremental-cumulative",
+      "date": "2026-07-25",
+      "generated_at": "2026-07-25T14:11:57Z",
+      "status": "success",
+      "source_rows": 58610,
+      "deduplicated_rows": 58605,
+      "curated_rows": 58605,
+      "rejected_rows": 5203,
+      "located_rows": 58595,
+      "quality_qualified_rows": 53407,
+      "published_rows": 53407,
+      "duration_seconds": 87.5,
+      "input_source_counts": {
+        "phongtro123": 22271,
+        "mogi": 22271,
+        "nhatot": 14068
+      },
+      "source_generated_at": "2026-07-25T14:11:57Z",
+      "published_at": "2026-07-25T14:13:24Z"
+    }
+  ],
+  "incremental_batch": {
+    "workflow_run_id": "30161170758",
+    "discovered_urls": 57,
+    "parsed_rows": 15,
+    "failed_urls": 0,
+    "upserted_rows": 15,
+    "net_new_rows": 10,
+    "existing_updated_rows": 5
+  },
+  "delivery_summary": {
+    "primary": "supabase-view",
+    "static_fallback_total": 53397,
+    "static_index_chunks": 11,
+    "static_detail_chunks": 107
+  }
+}
