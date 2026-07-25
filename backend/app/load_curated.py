@@ -202,10 +202,18 @@ def _build_copy_sql(table_name: str) -> str:
 
 def _build_upsert_sql(*, include_geom: bool) -> str:
     select_sql = ", ".join(CURATED_COLUMNS)
+    stage_select_sql = ", ".join(
+        "COALESCE(NULLIF(source_name, ''), 'unknown') AS source_name"
+        if column == "source_name"
+        else "COALESCE(NULLIF(source_post_id, ''), listing_id::text) AS source_post_id"
+        if column == "source_post_id"
+        else column
+        for column in CURATED_COLUMNS
+    )
     deduped_cte = f"""
         WITH deduped_stage AS (
             SELECT DISTINCT ON (listing_id)
-                {select_sql}
+                {stage_select_sql}
             FROM curated_listings_stage
             ORDER BY
                 listing_id,

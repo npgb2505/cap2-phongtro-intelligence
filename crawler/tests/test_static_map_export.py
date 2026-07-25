@@ -70,7 +70,7 @@ class StaticMapExportTests(unittest.TestCase):
                 {
                     "listing_id": f"listing-{index}",
                     "source_name": "mogi",
-                    "source_post_id": str(index),
+                    "source_post_id": "" if index == 0 else str(index),
                     "title_clean": f"Phòng số {index}",
                     "canonical_url": f"https://example.com/{index}",
                     "province": "Hà Nội",
@@ -140,6 +140,7 @@ class StaticMapExportTests(unittest.TestCase):
                 rebuilt = list(csv.DictReader(handle))
             self.assertEqual(rebuilt[2]["status"], "expired")
             self.assertEqual(rebuilt[0]["description_clean"], "Mô tả dài chỉ tải khi mở chi tiết")
+            self.assertEqual(rebuilt[0]["source_post_id"], "listing-0")
             self.assertEqual(len(rebuilt[0]["content_hash"]), 64)
 
     def test_quality_gate_allows_missing_images_and_keeps_best_rows(self) -> None:

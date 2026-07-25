@@ -55,6 +55,8 @@ def static_snapshot_to_csv(manifest_path: Path, output_csv: Path) -> dict[str, o
         listing_id = str(index_item.get("id") or "")
         merged = {**index_item, **details.get(listing_id, {})}
         merged["listing_id"] = listing_id
+        merged["source_name"] = merged.get("source_name") or "unknown"
+        merged["source_post_id"] = merged.get("source_post_id") or listing_id
         merged["title_clean"] = merged.get("title") or "Tin phòng trọ"
         merged["title"] = merged.get("title_raw") or merged["title_clean"]
         merged["content_hash"] = _content_hash(merged)
