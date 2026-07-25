@@ -74,6 +74,8 @@ class StaticMapExportTests(unittest.TestCase):
                     "title_clean": f"Phòng số {index}",
                     "canonical_url": f"https://example.com/{index}",
                     "province": "Hà Nội",
+                    "amenities_text": "Máy lạnh | Ban công" if index == 0 else "",
+                    "has_aircon": index == 0,
                     "description_clean": "Mô tả dài chỉ tải khi mở chi tiết",
                     "contact_phone": "0987654321",
                     "status": "expired" if index == 2 else "active",
@@ -141,6 +143,9 @@ class StaticMapExportTests(unittest.TestCase):
             self.assertEqual(rebuilt[2]["status"], "expired")
             self.assertEqual(rebuilt[0]["description_clean"], "Mô tả dài chỉ tải khi mở chi tiết")
             self.assertEqual(rebuilt[0]["source_post_id"], "listing-0")
+            self.assertEqual(rebuilt[0]["amenity_count"], "2")
+            self.assertEqual(rebuilt[0]["has_aircon"], "true")
+            self.assertEqual(rebuilt[1]["has_aircon"], "false")
             self.assertEqual(len(rebuilt[0]["content_hash"]), 64)
 
     def test_quality_gate_allows_missing_images_and_keeps_best_rows(self) -> None:

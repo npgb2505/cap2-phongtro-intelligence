@@ -9,6 +9,21 @@ from typing import Any
 
 from app.curation import CURATED_COLUMNS
 
+BOOLEAN_COLUMNS = (
+    "is_reference_coordinate",
+    "has_aircon",
+    "has_private_wc",
+    "has_loft",
+    "has_parking",
+    "has_security",
+    "has_fingerprint_lock",
+    "allows_free_hours",
+    "has_balcony",
+    "has_kitchen",
+    "has_fridge",
+    "has_washer",
+)
+
 
 def _read_payload(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -32,6 +47,22 @@ def _csv_value(value: Any) -> Any:
     if isinstance(value, bool):
         return "true" if value else "false"
     return value
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _amenity_count(item: dict[str, Any]) -> int:
+    existing = item.get("amenity_count")
+    if existing not in (None, ""):
+        return int(existing)
+    text = str(item.get("amenities_text") or "").strip()
+    if text:
+        return len([part for part in text.split("|") if part.strip()])
+    return sum(_as_bool(item.get(column)) for column in BOOLEAN_COLUMNS if column != "is_reference_coordinate")
 
 
 def static_snapshot_to_csv(manifest_path: Path, output_csv: Path) -> dict[str, object]:
@@ -59,6 +90,10 @@ def static_snapshot_to_csv(manifest_path: Path, output_csv: Path) -> dict[str, o
         merged["source_post_id"] = merged.get("source_post_id") or listing_id
         merged["title_clean"] = merged.get("title") or "Tin phòng trọ"
         merged["title"] = merged.get("title_raw") or merged["title_clean"]
+        merged["image_count"] = merged.get("image_count") or 0
+        merged["amenity_count"] = _amenity_count(merged)
+        for column in BOOLEAN_COLUMNS:
+            merged[column] = _as_bool(merged.get(column))
         merged["content_hash"] = _content_hash(merged)
         rows.append({column: _csv_value(merged.get(column)) for column in CURATED_COLUMNS})
 

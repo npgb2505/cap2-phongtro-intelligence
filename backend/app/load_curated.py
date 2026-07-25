@@ -202,12 +202,27 @@ def _build_copy_sql(table_name: str) -> str:
 
 def _build_upsert_sql(*, include_geom: bool) -> str:
     select_sql = ", ".join(CURATED_COLUMNS)
+    stage_defaults = {
+        "source_name": "COALESCE(NULLIF(source_name, ''), 'unknown')",
+        "source_post_id": "COALESCE(NULLIF(source_post_id, ''), listing_id::text)",
+        "status": "COALESCE(NULLIF(status, ''), 'active')",
+        "is_reference_coordinate": "COALESCE(is_reference_coordinate, FALSE)",
+        "image_count": "COALESCE(image_count, 0)",
+        "amenity_count": "COALESCE(amenity_count, 0)",
+        "has_aircon": "COALESCE(has_aircon, FALSE)",
+        "has_private_wc": "COALESCE(has_private_wc, FALSE)",
+        "has_loft": "COALESCE(has_loft, FALSE)",
+        "has_parking": "COALESCE(has_parking, FALSE)",
+        "has_security": "COALESCE(has_security, FALSE)",
+        "has_fingerprint_lock": "COALESCE(has_fingerprint_lock, FALSE)",
+        "allows_free_hours": "COALESCE(allows_free_hours, FALSE)",
+        "has_balcony": "COALESCE(has_balcony, FALSE)",
+        "has_kitchen": "COALESCE(has_kitchen, FALSE)",
+        "has_fridge": "COALESCE(has_fridge, FALSE)",
+        "has_washer": "COALESCE(has_washer, FALSE)",
+    }
     stage_select_sql = ", ".join(
-        "COALESCE(NULLIF(source_name, ''), 'unknown') AS source_name"
-        if column == "source_name"
-        else "COALESCE(NULLIF(source_post_id, ''), listing_id::text) AS source_post_id"
-        if column == "source_post_id"
-        else column
+        f"{stage_defaults[column]} AS {column}" if column in stage_defaults else column
         for column in CURATED_COLUMNS
     )
     deduped_cte = f"""
