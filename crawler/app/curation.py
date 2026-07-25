@@ -6,10 +6,11 @@ import json
 import re
 import time
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 import httpx
@@ -292,10 +293,14 @@ class CurationPipeline:
         self.geocoder = NominatimGeocoder(store.root / GEOCODE_CACHE_RELATIVE_PATH)
         self.address_parts_cache: dict[tuple[str, str, str, str, str, str, str], AddressParts] = {}
         self.exact_location_cache: dict[str, ResolvedLocation | None] = {}
+        self.street_location_cache: dict[str, ResolvedLocation | None] = {}
         self.locality_location_cache: dict[str, ResolvedLocation | None] = {}
         self.province_location_cache: dict[str, ResolvedLocation | None] = {}
+        self.street_reference_locations: dict[str, ResolvedLocation] = {}
+        self.district_reference_locations: dict[str, ResolvedLocation] = {}
+        self.province_reference_locations: dict[str, ResolvedLocation] = {}
 
-    def run(self, exact_geocode_limit: int = 120) -> CurationResult:
+    def run(self, exact_geocode_limit: int = 120, street_geocode_limit: int | None = None) -> CurationResult:
         started_at = time.perf_counter()
         source_path = self.store.root / SOURCE_RELATIVE_PATH
         if not source_path.exists():
@@ -322,8 +327,12 @@ class CurationPipeline:
             deduped_rows.append(row)
         duplicate_source_rows = len(rows) - len(deduped_rows)
         rows = deduped_rows
+        self._build_source_reference_locations(rows)
         exact_budget = ExactGeocodeBudget(limit=exact_geocode_limit)
-        curated_rows = [self._curate_row(row, exact_budget) for row in rows]
+        street_budget = ExactGeocodeBudget(
+            limit=exact_geocode_limit if street_geocode_limit is None else street_geocode_limit
+        )
+        curated_rows = [self._curate_row(row, exact_budget, street_budget) for row in rows]
         curated_rows.sort(
             key=lambda row: (
                 _parse_datetime(row.get("posted_at")) or datetime.min.replace(tzinfo=UTC),
@@ -358,6 +367,10 @@ class CurationPipeline:
                 "unique_provinces": len({row.get("province") for row in curated_rows if row.get("province")}),
                 "geocode_precision_counts": dict(precision_counts),
                 "exact_geocode_new_queries": exact_budget.used,
+                "street_geocode_new_queries": street_budget.used,
+                "street_reference_keys": len(self.street_reference_locations),
+                "district_reference_keys": len(self.district_reference_locations),
+                "province_reference_keys": len(self.province_reference_locations),
                 "cache_entries": len(self.geocoder.cache),
                 "duration_seconds": round(time.perf_counter() - started_at, 2),
             },
@@ -378,7 +391,75 @@ class CurationPipeline:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             return list(csv.DictReader(handle))
 
-    def _curate_row(self, row: dict[str, str], exact_budget: "ExactGeocodeBudget") -> dict[str, Any]:
+    def _build_source_reference_locations(self, rows: list[dict[str, str]]) -> None:
+        street_coordinates: defaultdict[str, list[tuple[float, float]]] = defaultdict(list)
+        district_coordinates: defaultdict[str, list[tuple[float, float]]] = defaultdict(list)
+        province_coordinates: defaultdict[str, list[tuple[float, float]]] = defaultdict(list)
+
+        for row in rows:
+            latitude = _to_float(row.get("latitude"))
+            longitude = _to_float(row.get("longitude"))
+            if not _is_valid_vietnam_coordinate(latitude, longitude):
+                continue
+
+            address_parts = self._get_address_parts(
+                full_address=_clean_address_text(row.get("full_address")),
+                street_address=_clean_address_text(row.get("street_address")),
+                ward=_normalize_ward(row.get("ward")),
+                district=_normalize_district(row.get("district")),
+                province=_normalize_province(row.get("province")),
+                title=_clean_text(row.get("title")),
+                description=_clean_multiline_text(row.get("description")),
+            )
+            coordinate = (latitude, longitude)
+            street_key = _street_reference_key(
+                address_parts.street_address,
+                address_parts.ward,
+                address_parts.district,
+                address_parts.province,
+            )
+            broad_street_key = _street_reference_key(
+                address_parts.street_address,
+                None,
+                address_parts.district,
+                address_parts.province,
+            )
+            district_key = _district_reference_key(address_parts.district, address_parts.province)
+            province_key = _province_reference_key(address_parts.province)
+            if street_key:
+                street_coordinates[street_key].append(coordinate)
+            if broad_street_key and broad_street_key != street_key:
+                street_coordinates[broad_street_key].append(coordinate)
+            if district_key:
+                district_coordinates[district_key].append(coordinate)
+            if province_key:
+                province_coordinates[province_key].append(coordinate)
+
+        self.street_reference_locations = _median_reference_locations(
+            street_coordinates,
+            precision="street",
+            source="source_street_index",
+            minimum_samples=1,
+        )
+        self.district_reference_locations = _median_reference_locations(
+            district_coordinates,
+            precision="district",
+            source="source_district_index",
+            minimum_samples=3,
+        )
+        self.province_reference_locations = _median_reference_locations(
+            province_coordinates,
+            precision="province",
+            source="source_province_index",
+            minimum_samples=5,
+        )
+
+    def _curate_row(
+        self,
+        row: dict[str, str],
+        exact_budget: "ExactGeocodeBudget",
+        street_budget: "ExactGeocodeBudget",
+    ) -> dict[str, Any]:
         title = _clean_text(row.get("title"))
         description = _clean_multiline_text(row.get("description"))
         amenities = _split_pipe_field(row.get("amenities_text"))
@@ -407,24 +488,18 @@ class CurationPipeline:
 
         source_latitude = _to_float(row.get("latitude"))
         source_longitude = _to_float(row.get("longitude"))
-        if source_latitude is not None and source_longitude is not None:
-            location = ResolvedLocation(
-                source_latitude,
-                source_longitude,
-                "exact",
-                f"{row.get('source_name') or 'source'}_payload",
-                map_reference_address or full_address,
-                True,
-            )
-        else:
-            location = self._resolve_location(
-                source_post_id=row.get("source_post_id", ""),
-                map_reference_address=map_reference_address,
-                street_address=address_parts.street_address,
-                district=address_parts.district,
-                province=address_parts.province,
-                exact_budget=exact_budget,
-            )
+        location = self._resolve_location(
+            source_name=row.get("source_name", ""),
+            map_reference_address=map_reference_address,
+            street_address=address_parts.street_address,
+            ward=address_parts.ward,
+            district=address_parts.district,
+            province=address_parts.province,
+            source_latitude=source_latitude,
+            source_longitude=source_longitude,
+            exact_budget=exact_budget,
+            street_budget=street_budget,
+        )
 
         posted_at = _normalize_datetime_text(row.get("posted_at"))
         expired_at = _normalize_datetime_text(row.get("expired_at"))
@@ -549,36 +624,91 @@ class CurationPipeline:
     def _resolve_location(
         self,
         *,
-        source_post_id: str,
+        source_name: str,
         map_reference_address: str,
         street_address: str | None,
+        ward: str | None,
         district: str | None,
         province: str | None,
+        source_latitude: float | None,
+        source_longitude: float | None,
         exact_budget: "ExactGeocodeBudget",
+        street_budget: "ExactGeocodeBudget",
     ) -> "ResolvedLocation":
+        geocode_district = _geocode_district_label(district, province)
+        exact_query = ", ".join(
+            [
+                part
+                for part in [street_address, ward, geocode_district, province, "Vietnam"]
+                if part
+            ]
+        )
         if (
-            map_reference_address
+            exact_query
             and district
             and province
-            and exact_budget.can_use()
             and _is_exact_geocode_eligible(street_address, map_reference_address)
+            and (self.geocoder.is_cached(exact_query, "exact") or exact_budget.can_use())
         ):
-            was_cache_hit = self.geocoder.is_cached(map_reference_address, "exact")
-            exact = self._get_exact_location(map_reference_address)
+            was_cache_hit = self.geocoder.is_cached(exact_query, "exact")
+            exact = self._get_exact_location(exact_query)
             exact_budget.consume_if_new(was_cache_hit)
             if exact:
                 return exact
 
-        locality_query = ", ".join([part for part in [district, province, "Vietnam"] if part])
+        if _is_valid_vietnam_coordinate(source_latitude, source_longitude):
+            precision = _reference_precision(street_address, district, province)
+            return ResolvedLocation(
+                latitude=source_latitude,
+                longitude=source_longitude,
+                precision=precision,
+                source=f"{source_name or 'source'}_payload_reference",
+                display_name=map_reference_address,
+                was_cache_hit=True,
+            )
+
+        street_key = _street_reference_key(street_address, ward, district, province)
+        broad_street_key = _street_reference_key(street_address, None, district, province)
+        street_reference = self.street_reference_locations.get(street_key or "")
+        if street_reference is None:
+            street_reference = self.street_reference_locations.get(broad_street_key or "")
+        if street_reference:
+            return street_reference.with_display_name(map_reference_address)
+
+        street_query = _street_geocode_query(street_address, geocode_district, province)
+        if street_query and (
+            self.geocoder.is_cached(street_query, "street") or street_budget.can_use()
+        ):
+            was_cache_hit = self.geocoder.is_cached(street_query, "street")
+            street_location = self._get_street_location(street_query)
+            street_budget.consume_if_new(was_cache_hit)
+            if street_location:
+                return street_location
+
+        locality_query = ", ".join([part for part in [geocode_district, province, "Vietnam"] if part])
         if locality_query:
             locality = self._get_locality_location(locality_query)
             if locality:
-                return locality.with_jitter(source_post_id, amplitude=0.0045)
+                return locality
+
+        district_key = _district_reference_key(district, province)
+        district_reference = self.district_reference_locations.get(district_key or "")
+        if district_reference:
+            return district_reference.with_display_name(
+                ", ".join([part for part in [district, province, "Vietnam"] if part])
+            )
 
         if province:
             province_result = self._get_province_location(f"{province}, Vietnam")
             if province_result:
-                return province_result.with_jitter(source_post_id, amplitude=0.09)
+                return province_result
+
+        province_key = _province_reference_key(province)
+        province_reference = self.province_reference_locations.get(province_key or "")
+        if province_reference:
+            return province_reference.with_display_name(
+                ", ".join([part for part in [province, "Vietnam"] if part])
+            )
 
         return ResolvedLocation(None, None, None, None, None, False)
 
@@ -586,6 +716,11 @@ class CurationPipeline:
         if query not in self.exact_location_cache:
             self.exact_location_cache[query] = self.geocoder.geocode(query, precision="exact")
         return self.exact_location_cache[query]
+
+    def _get_street_location(self, query: str) -> "ResolvedLocation | None":
+        if query not in self.street_location_cache:
+            self.street_location_cache[query] = self.geocoder.geocode(query, precision="street")
+        return self.street_location_cache[query]
 
     def _get_locality_location(self, query: str) -> "ResolvedLocation | None":
         if query not in self.locality_location_cache:
@@ -628,20 +763,115 @@ class ResolvedLocation:
     display_name: str | None
     was_cache_hit: bool
 
-    def with_jitter(self, key: str, amplitude: float) -> "ResolvedLocation":
-        if self.latitude is None or self.longitude is None:
-            return self
-        seed = int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16)
-        lat_offset = (((seed % 1000) / 1000) - 0.5) * amplitude
-        lon_offset = ((((seed // 1000) % 1000) / 1000) - 0.5) * amplitude
+    def with_display_name(self, display_name: str | None) -> "ResolvedLocation":
         return ResolvedLocation(
-            latitude=round(self.latitude + lat_offset, 7),
-            longitude=round(self.longitude + lon_offset, 7),
+            latitude=self.latitude,
+            longitude=self.longitude,
             precision=self.precision,
             source=self.source,
-            display_name=self.display_name,
+            display_name=display_name or self.display_name,
             was_cache_hit=self.was_cache_hit,
         )
+
+
+def _median_reference_locations(
+    coordinate_groups: dict[str, list[tuple[float, float]]],
+    *,
+    precision: str,
+    source: str,
+    minimum_samples: int,
+) -> dict[str, ResolvedLocation]:
+    references: dict[str, ResolvedLocation] = {}
+    for key, coordinates in coordinate_groups.items():
+        if len(coordinates) < minimum_samples:
+            continue
+        references[key] = ResolvedLocation(
+            latitude=round(float(median(point[0] for point in coordinates)), 7),
+            longitude=round(float(median(point[1] for point in coordinates)), 7),
+            precision=precision,
+            source=source,
+            display_name=None,
+            was_cache_hit=True,
+        )
+    return references
+
+
+def _is_valid_vietnam_coordinate(latitude: float | None, longitude: float | None) -> bool:
+    return bool(
+        latitude is not None
+        and longitude is not None
+        and 8.0 <= latitude <= 24.0
+        and 102.0 <= longitude <= 110.0
+    )
+
+
+def _reference_precision(
+    street_address: str | None,
+    district: str | None,
+    province: str | None,
+) -> str | None:
+    if _extract_query_road(street_address or ""):
+        return "street"
+    if district:
+        return "district"
+    if province:
+        return "province"
+    return None
+
+
+def _street_reference_key(
+    street_address: str | None,
+    ward: str | None,
+    district: str | None,
+    province: str | None,
+) -> str | None:
+    road = _extract_query_road(street_address or "")
+    if not road or not province:
+        return None
+    reference_district = _geocode_district_label(district, province)
+    return "|".join(
+        [
+            _fold_text(road),
+            _fold_text(ward),
+            _fold_text(reference_district),
+            _fold_text(province),
+        ]
+    )
+
+
+def _district_reference_key(district: str | None, province: str | None) -> str | None:
+    if not district or not province:
+        return None
+    reference_district = _geocode_district_label(district, province)
+    return "|".join([_fold_text(reference_district), _fold_text(province)])
+
+
+def _province_reference_key(province: str | None) -> str | None:
+    return _fold_text(province) or None
+
+
+def _geocode_district_label(district: str | None, province: str | None) -> str | None:
+    district_folded = _fold_text(district)
+    province_folded = _fold_text(province)
+    if province_folded == "ho chi minh" and district_folded in {
+        "quan 2",
+        "quan 9",
+        "thu duc",
+        "thanh pho thu duc",
+    }:
+        return "Thành phố Thủ Đức"
+    return district
+
+
+def _street_geocode_query(
+    street_address: str | None,
+    district: str | None,
+    province: str | None,
+) -> str | None:
+    road = _extract_query_road(street_address or "")
+    if not road or not province:
+        return None
+    return ", ".join([part for part in [road, district, province, "Vietnam"] if part])
 
 
 class NominatimGeocoder:
@@ -773,7 +1003,27 @@ def _is_nominatim_result_acceptable(item: dict[str, Any], query: str, precision:
             or address.get("residential")
             or address.get("neighbourhood")
         )
-        return bool(query_road and result_road and _road_tokens_match(query_road, result_road))
+        return bool(
+            query_road
+            and result_road
+            and _road_tokens_match(query_road, result_road)
+            and _query_has_matching_locality(query, result_folded)
+        )
+
+    if precision == "street":
+        query_road = _extract_query_road(query)
+        result_road = _clean_text(
+            address.get("road")
+            or address.get("pedestrian")
+            or address.get("residential")
+            or address.get("neighbourhood")
+        )
+        return bool(
+            query_road
+            and result_road
+            and _road_tokens_match(query_road, result_road)
+            and _query_has_matching_locality(query, result_folded)
+        )
 
     allowed_locality_categories = {"boundary", "place"}
     allowed_locality_types = {
@@ -812,11 +1062,32 @@ def _clean_house_number(value: Any) -> str | None:
 
 
 def _extract_query_road(value: str) -> str | None:
-    first_part = _clean_text(value).split(",", 1)[0]
-    house_number = _extract_house_number(first_part)
-    if house_number:
-        first_part = re.sub(r"^\s*\S+\s+", "", first_part, count=1)
-    return _clean_text(first_part) or None
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return None
+    cleaned = re.sub(
+        r"^\s*(?:số\s+)?[A-Za-z]?\d+[A-Za-z]?(?:[\/-]\d+[A-Za-z]?)*\s*,?\s*",
+        "",
+        cleaned,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    parts = [_clean_text(part) for part in cleaned.split(",") if _clean_text(part)]
+    if not parts:
+        return None
+    if len(parts) > 1 and re.fullmatch(r"(?:hẻm|hem|ngõ|ngo|ngách|ngach)\s+\d+[A-Za-z]?", parts[0], re.IGNORECASE):
+        return parts[1]
+    return parts[0]
+
+
+def _query_has_matching_locality(query: str, result_folded: str) -> bool:
+    parts = [_fold_text(part) for part in query.split(",") if _clean_text(part)]
+    locality_parts = [
+        part
+        for part in parts[1:]
+        if part and part not in {"vietnam", "viet nam"}
+    ]
+    return not locality_parts or any(part in result_folded for part in locality_parts)
 
 
 def _road_tokens_match(first: str, second: str) -> bool:

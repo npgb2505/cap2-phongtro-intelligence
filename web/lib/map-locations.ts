@@ -20,10 +20,10 @@ const LEVEL_RANK: Record<MapLocationLevel, number> = {
 };
 
 export const MAP_LOCATION_LABELS: Record<MapLocationLevel, string> = {
-  exact: "Địa chỉ có số nhà",
-  street: "Vị trí trên tuyến đường",
-  district: "Trung tâm quận huyện",
-  province: "Trung tâm tỉnh thành"
+  exact: "Đã khớp số nhà và tên đường",
+  street: "Điểm tham chiếu trên tuyến đường",
+  district: "Điểm đại diện quận huyện",
+  province: "Điểm đại diện tỉnh thành"
 };
 
 function foldText(value: string | null | undefined) {
@@ -44,7 +44,7 @@ function coordinateKey(item: Listing) {
 }
 
 function hasHouseNumber(value: string | null | undefined) {
-  return /^\s*\d+[a-zA-Z]?(?:[\/-]\d+[a-zA-Z]?)*\b/.test(value ?? "");
+  return /^\s*(?:số\s+)?[a-zA-Z]?\d+[a-zA-Z]?(?:[\/-]\d+[a-zA-Z]?)*\b/i.test(value ?? "");
 }
 
 export function listingAddressLevel(item: Listing): MapLocationLevel | null {
@@ -53,6 +53,9 @@ export function listingAddressLevel(item: Listing): MapLocationLevel | null {
       return "exact";
     }
     return item.street_address ? "street" : item.district ? "district" : item.province ? "province" : null;
+  }
+  if (item.geocode_precision === "street") {
+    return "street";
   }
   if (item.geocode_precision === "district") {
     return "district";
@@ -72,6 +75,9 @@ function locationLevel(item: Listing, coordinateFrequency: number): MapLocationL
       return "street";
     }
     return item.district ? "district" : item.province ? "province" : null;
+  }
+  if (item.geocode_precision === "street") {
+    return "street";
   }
   if (item.geocode_precision === "district") {
     return "district";

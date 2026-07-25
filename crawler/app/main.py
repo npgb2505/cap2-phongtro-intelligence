@@ -54,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     curated = subparsers.add_parser("transform-curated")
     curated.add_argument("--exact-geocode-limit", type=int, default=120)
+    curated.add_argument("--street-geocode-limit", type=int, default=120)
 
     return parser
 
@@ -103,7 +104,10 @@ def main() -> None:
             reset_state=args.reset_state,
         )
     else:
-        result = CurationPipeline(store).run(exact_geocode_limit=args.exact_geocode_limit)
+        result = CurationPipeline(store).run(
+            exact_geocode_limit=args.exact_geocode_limit,
+            street_geocode_limit=args.street_geocode_limit,
+        )
 
     print(json.dumps(_serialize_result(result), indent=2, ensure_ascii=True, default=_json_default))
 

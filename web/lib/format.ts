@@ -28,9 +28,10 @@ const DISTRICT_ALIASES: Record<string, string> = {
 };
 
 const PRECISION_LABELS: Record<string, string> = {
-  exact: "Tọa độ do nguồn cung cấp",
-  district: "Vị trí tham chiếu cấp quận",
-  province: "Vị trí tham chiếu cấp tỉnh",
+  exact: "Đã khớp số nhà và tên đường",
+  street: "Điểm tham chiếu trên tuyến đường",
+  district: "Điểm đại diện cấp quận huyện",
+  province: "Điểm đại diện cấp tỉnh thành",
   none: "Chưa định vị",
 };
 

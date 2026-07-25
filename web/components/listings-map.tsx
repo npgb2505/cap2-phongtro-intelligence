@@ -35,9 +35,9 @@ const LOCATION_COLORS: Record<MapLocationLevel, string> = {
 };
 const LOCATION_UNCERTAINTY_RADIUS: Record<MapLocationLevel, number> = {
   exact: 0,
-  street: 350,
-  district: 2500,
-  province: 12000
+  street: 1200,
+  district: 5000,
+  province: 25000
 };
 
 function formatCurrency(value: number | null) {
@@ -66,17 +66,21 @@ function googleMapsSearchUrl(item: Listing) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || "Việt Nam")}`;
 }
 
-function locationExplanation(level: MapLocationLevel) {
+function locationExplanation(group: MapLocationGroup) {
+  const level = group.level;
   if (level === "exact") {
-    return "Marker dùng tọa độ nguồn cho địa chỉ có số nhà.";
+    return "Số nhà và tên đường đã cùng khớp với kết quả geocode.";
   }
   if (level === "street") {
-    return "Vùng nét đứt biểu thị khu vực ước lượng quanh tuyến đường, không phải số nhà chính xác.";
+    if (group.representative.geocode_source?.includes("payload_reference")) {
+      return "Nguồn chỉ cung cấp điểm tham chiếu trên tuyến đường; đây không phải tọa độ số nhà đã xác minh.";
+    }
+    return "Vùng nét đứt biểu thị đoạn đường tham chiếu, không phải tọa độ chính xác của số nhà.";
   }
   if (level === "district") {
-    return "Vùng nét đứt biểu thị khu vực ước lượng quanh trung tâm quận huyện.";
+    return "Vùng nét đứt biểu thị khu vực quận huyện; tin không có vị trí chi tiết đáng tin cậy hơn.";
   }
-  return "Vùng nét đứt biểu thị khu vực ước lượng quanh trung tâm tỉnh thành.";
+  return "Vùng nét đứt biểu thị khu vực tỉnh thành; tin không có vị trí chi tiết đáng tin cậy hơn.";
 }
 
 function ResizeMap() {
@@ -302,7 +306,7 @@ export function ListingsMap({ groups, selectedListingId, focusCoordinate, onSele
                 {group.count > 1 ? <p>Ví dụ: {cleanDisplayText(item.title)}</p> : null}
                 <p>{cleanDisplayText(item.full_address) || "Đang cập nhật địa chỉ"}</p>
                 <p>{formatDistrict(item.district)}</p>
-                <p className="popup-confidence">{locationExplanation(group.level)}</p>
+                <p className="popup-confidence">{locationExplanation(group)}</p>
                 <p>{formatCurrency(item.price_value)}</p>
                 <a href={googleMapsSearchUrl(item)} target="_blank" rel="noreferrer">
                   Kiểm tra địa chỉ trên Google Maps

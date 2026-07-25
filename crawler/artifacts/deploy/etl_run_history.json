@@ -30,6 +30,34 @@
       },
       "source_generated_at": "2026-07-21T12:16:56.547504+00:00",
       "published_at": "2026-07-21T12:17:00.530999+00:00"
+    },
+    {
+      "run_id": "etl-20260725T161611Z-7cce4ee0",
+      "pipeline_version": "production-quality-v3",
+      "run_mode": "budgeted_source_ingestion",
+      "dataset_fingerprint": "7cce4ee033b1c82e",
+      "date": "2026-07-25",
+      "generated_at": "2026-07-25T16:16:11.546513+00:00",
+      "status": "success",
+      "source_rows": 58595,
+      "deduplicated_rows": 58595,
+      "curated_rows": 58595,
+      "rejected_rows": 5247,
+      "located_rows": 58585,
+      "quality_qualified_rows": 53348,
+      "published_rows": 53348,
+      "duration_seconds": 7.796,
+      "stage_durations_seconds": {
+        "ingest_and_transform": 4.654,
+        "static_export": 3.142
+      },
+      "input_source_counts": {
+        "phongtro123": 22266,
+        "nhatot": 14063,
+        "mogi": 22266
+      },
+      "source_generated_at": "2026-07-25T16:16:11.546513+00:00",
+      "published_at": "2026-07-25T16:16:15.001474+00:00"
     }
   ]
 }

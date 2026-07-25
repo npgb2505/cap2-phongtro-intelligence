@@ -1,9 +1,9 @@
 {
-  "run_id": "etl-20260721T121656Z-d3cd1939",
+  "run_id": "etl-20260725T161611Z-7cce4ee0",
   "pipeline_version": "production-quality-v3",
   "run_mode": "budgeted_source_ingestion",
-  "generated_at": "2026-07-21T12:16:56.547504+00:00",
-  "source_generated_at": "2026-07-21T12:16:56.547504+00:00",
+  "generated_at": "2026-07-25T16:16:11.546513+00:00",
+  "source_generated_at": "2026-07-25T16:16:11.546513+00:00",
   "source_csv": "crawler/artifacts/curated/toan-quoc/listings_curated.csv",
   "output_csv": "crawler/artifacts/deploy/listings_deploy.csv",
   "source_rows": 58595,
@@ -16,8 +16,8 @@
   "max_rows": 60000,
   "min_source_share": 0.24,
   "selection_strategy": "budgeted-source-balance-quality-ranked",
-  "dataset_fingerprint": "d3cd193949ffdd25",
-  "duration_seconds": 5.112,
+  "dataset_fingerprint": "7cce4ee033b1c82e",
+  "duration_seconds": 4.654,
   "source_counts": {
     "phongtro123": 22266,
     "nhatot": 14063,

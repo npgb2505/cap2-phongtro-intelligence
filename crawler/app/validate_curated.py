@@ -10,6 +10,7 @@ from pathlib import Path
 from app.curation import CANONICAL_PROVINCES, CURATABLE_SOURCES, KNOWN_CONTACT_HOTLINES
 
 VALID_STATUSES = {"active", "expired", "hidden"}
+VALID_GEOCODE_PRECISIONS = {"", "exact", "street", "district", "province"}
 
 
 def validate_curated(path: Path, min_rows: int) -> dict[str, object]:
@@ -65,6 +66,26 @@ def validate_curated(path: Path, min_rows: int) -> dict[str, object]:
     if coordinate_mismatches:
         errors.append(f"latitude/longitude mismatch rows: {coordinate_mismatches}")
 
+    invalid_geocode_precisions = sorted({
+        str(row.get("geocode_precision") or "").strip()
+        for row in rows
+        if str(row.get("geocode_precision") or "").strip() not in VALID_GEOCODE_PRECISIONS
+    })
+    if invalid_geocode_precisions:
+        errors.append(f"invalid geocode precisions: {invalid_geocode_precisions}")
+
+    unverified_exact_payload_rows = sum(
+        1
+        for row in rows
+        if str(row.get("geocode_precision") or "").strip() == "exact"
+        and "payload" in str(row.get("geocode_source") or "").lower()
+        and "verified" not in str(row.get("geocode_source") or "").lower()
+    )
+    if unverified_exact_payload_rows:
+        errors.append(
+            f"unverified source payload marked exact: {unverified_exact_payload_rows}"
+        )
+
     result = {
         "status": "ok" if not errors else "failed",
         "rows": len(rows),
@@ -76,6 +97,8 @@ def validate_curated(path: Path, min_rows: int) -> dict[str, object]:
         "bad_zalo_rows": bad_zalo_rows,
         "invalid_phone_rows": invalid_phone_rows,
         "coordinate_mismatches": coordinate_mismatches,
+        "invalid_geocode_precisions": len(invalid_geocode_precisions),
+        "unverified_exact_payload_rows": unverified_exact_payload_rows,
         "errors": errors,
     }
     if errors:
