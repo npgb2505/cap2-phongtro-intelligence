@@ -131,7 +131,25 @@ def _curated_table_sql(*, include_geom: bool) -> str:
         CREATE INDEX IF NOT EXISTS idx_curated_listings_province_district ON curated_listings(province, district);
         CREATE INDEX IF NOT EXISTS idx_curated_listings_posted_at ON curated_listings(posted_at DESC);
         ALTER TABLE curated_listings ADD COLUMN IF NOT EXISTS source_name TEXT NOT NULL DEFAULT 'unknown';
-        ALTER TABLE curated_listings ALTER COLUMN price_per_m2 TYPE NUMERIC(18,2);
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'curated_listings'
+                  AND column_name = 'price_per_m2'
+                  AND (
+                      data_type <> 'numeric'
+                      OR numeric_precision <> 18
+                      OR numeric_scale <> 2
+                  )
+            ) THEN
+                ALTER TABLE curated_listings
+                    ALTER COLUMN price_per_m2 TYPE NUMERIC(18,2);
+            END IF;
+        END
+        $$;
         {geom_index}
     """
 
