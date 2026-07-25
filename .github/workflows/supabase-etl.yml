@@ -63,15 +63,36 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check required Supabase secret
+      - name: Prepare Supabase database connection
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_URL_SECRET: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          if [ -z "$SUPABASE_DB_URL" ]; then
-            echo "Missing GitHub Actions secret: SUPABASE_DB_URL"
-            echo "Add a Supabase pooled/direct Postgres connection string before running this workflow."
-            exit 1
-          fi
+          python - <<'PY'
+          import os
+          from urllib.parse import quote
+
+          database_url = os.environ.get("SUPABASE_DB_URL_SECRET", "").strip()
+          if not database_url:
+              password = os.environ.get("SUPABASE_DB_PASSWORD", "")
+              if not password:
+                  raise SystemExit(
+                      "Missing GitHub Actions secret: add SUPABASE_DB_PASSWORD "
+                      "(recommended) or SUPABASE_DB_URL."
+                  )
+              if "\n" in password or "\r" in password:
+                  raise SystemExit("SUPABASE_DB_PASSWORD must be a single line.")
+              encoded_password = quote(password, safe="")
+              database_url = (
+                  "postgresql://postgres.ggvyzzlrfcfhloiipclk:"
+                  f"{encoded_password}"
+                  "@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
+                  "?sslmode=require"
+              )
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"PT_DATABASE_URL={database_url}\n")
+          PY
 
       - name: Install backend
         working-directory: backend
@@ -79,8 +100,6 @@ jobs:
 
       - name: Apply base Supabase schema
         working-directory: backend
-        env:
-          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m app.apply_sql --file ../sql/schema.sql
 
       - name: Install crawler
@@ -125,8 +144,6 @@ jobs:
 
       - name: Load curated CSV into Supabase
         working-directory: backend
-        env:
-          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           if [ "$RUN_MODE" = "crawl_then_load" ]; then
             python -m app.load_curated --csv ../crawler/artifacts/curated/toan-quoc/listings_curated.csv --keep-existing
@@ -138,12 +155,8 @@ jobs:
 
       - name: Apply Supabase views and RLS
         working-directory: backend
-        env:
-          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m app.apply_sql --file ../sql/supabase_views.sql
 
       - name: Verify Supabase load
         working-directory: backend
-        env:
-          PT_DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m app.check_supabase_load --min-rows 1000
